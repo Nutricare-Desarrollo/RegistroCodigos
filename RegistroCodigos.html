@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solicitud de Creación de Código de Artículo</title>
+<title>Nutricare · Portal de Registros</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
+
 :root{
   --brand:#0a5c8a; --brand-d:#074663; --accent:#12a4b4; --bg:#eef3f7;
   --card:#ffffff; --line:#d8e2ea; --txt:#1d2b36; --muted:#6b7d8a;
@@ -107,6 +108,33 @@ tbody tr:last-child td{border-bottom:none}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--brand-d);color:#fff;padding:12px 22px;border-radius:10px;box-shadow:var(--shadow);z-index:100;font-size:13.5px;animation:pop .3s}
 @keyframes pop{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1}}
 .req{color:var(--danger)}
+
+
+/* ===== LAYOUT MULTI-MÓDULO (menú lateral Nutricare) ===== */
+#app{display:block}
+.layout{display:flex;min-height:100vh}
+.sidebar{width:250px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;position:fixed;inset:0 auto 0 0;z-index:20}
+.sidebar .logo-area{padding:20px 18px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px}
+.sidebar .logo-mark{width:44px;height:44px;border-radius:50%;background:conic-gradient(from 200deg,#0a5c8a,#12a4b4,#5aa832,#0a5c8a);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:17px;flex:0 0 auto}
+.sidebar .logo-txt b{display:block;font-size:15px;color:var(--brand-d);line-height:1.1}
+.sidebar .logo-txt b span{color:#5aa832}
+.sidebar .logo-txt small{color:var(--muted);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase}
+.nav-wrap{flex:1;overflow-y:auto;padding:14px 12px}
+.nav-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;padding:12px 10px 6px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;color:var(--txt);cursor:pointer;font-weight:600;font-size:13.5px;margin-bottom:2px}
+.nav-item:hover{background:#eef6fb}
+.nav-item.active{background:#e3f2fb;color:var(--brand-d)}
+.nav-item .ic{font-size:15px;width:18px;text-align:center}
+.sidebar .userbox{border-top:1px solid var(--line);padding:14px 16px}
+.sidebar .userbox .who b{display:block;font-size:13px;color:var(--txt)}
+.sidebar .userbox .who small{color:var(--muted);font-size:11.5px}
+.profile-toggle{display:flex;margin-top:12px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.profile-toggle button{flex:1;background:#fff;color:var(--muted);padding:8px;border-radius:0;font-size:12px}
+.profile-toggle button.active{background:var(--brand);color:#fff}
+.content{margin-left:250px;flex:1;padding:24px;max-width:1400px}
+@media(max-width:820px){.sidebar{position:static;width:100%;height:auto}.content{margin-left:0}.layout{flex-direction:column}}
+.cat-actions{display:flex;gap:7px;justify-content:flex-end}
+
 </style>
 </head>
 <body>
@@ -114,9 +142,9 @@ tbody tr:last-child td{border-bottom:none}
 <!-- ===== LOGIN ===== -->
 <div id="login">
   <div class="login-card">
-    <div class="logo">MK</div>
-    <h1>Solicitud de Creación de Código</h1>
-    <p>Artículos Dynamics · Inicie sesión para continuar</p>
+    <div class="logo">N</div>
+    <h1>Corporación Nutricare</h1>
+    <p>Portal de Registros · Inicie sesión para continuar</p>
     <button class="ms-btn" onclick="msLogin()">
       <span class="ms-logo"><span></span><span></span><span></span><span></span></span>
       Iniciar sesión con Microsoft
@@ -126,133 +154,144 @@ tbody tr:last-child td{border-bottom:none}
 
 <!-- ===== APP ===== -->
 <div id="app" class="hidden">
-  <header class="topbar">
-    <div class="brand"><span class="mk">MK</span> Creación de Códigos de Artículo</div>
-    <div class="user">
-      <div class="avatar" id="userAvatar">U</div>
-      <span id="userName">Usuario</span>
-      <button class="logout" onclick="logout()">Salir</button>
-    </div>
-  </header>
-  <main>
-    <!-- GRID PRINCIPAL -->
-    <section id="viewGrid">
-      <div class="page-head">
-        <div>
-          <h2>Registros de Solicitud</h2>
-          <div class="sub">Listado de códigos de artículo creados</div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn-ghost" onclick="exportExcel()">⬇ Descargar Excel</button>
-          <button class="btn-primary" onclick="openForm()">＋ Nuevo Registro</button>
+  <div class="layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="logo-area">
+        <div class="logo-mark">Ci</div>
+        <div class="logo-txt"><b>Corporación <span>Nutricare</span></b><small>Portal de Registros</small></div>
+      </div>
+      <nav class="nav-wrap">
+        <div class="nav-label">Operación</div>
+        <div class="nav-item active" id="nav-codigos" onclick="switchModule('codigos')"><span class="ic">🏷️</span> Creación de Códigos</div>
+        <div class="nav-item" id="nav-ordenes" onclick="switchModule('ordenes')"><span class="ic">📦</span> Solicitud de Orden de Pedido</div>
+        <div class="nav-label">Configuración</div>
+        <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
+      </nav>
+      <div class="userbox">
+        <div class="who"><b id="userName">Usuario</b><small>Administrador</small></div>
+        <div class="profile-toggle">
+          <button class="active" onclick="setPerfil(this,'Captura')">Captura</button>
+          <button onclick="setPerfil(this,'Contabilidad')">Contabilidad</button>
         </div>
       </div>
-      <div class="card">
-        <div class="tbl-wrap">
-          <table id="mainTable">
-            <thead><tr>
-              <th>Código</th><th>Nombre del Producto</th><th>Departamento</th>
-              <th>Línea</th><th>Familia</th><th>Proveedor</th><th>País Origen</th>
-              <th style="text-align:right">Acciones</th>
-            </tr></thead>
-            <tbody id="mainBody"></tbody>
-          </table>
-        </div>
-        <div id="mainEmpty" class="empty hidden">
-          <div class="big">📋</div>
-          <div>No hay registros aún. Haga clic en <b>“＋ Nuevo Registro”</b> para comenzar.</div>
-        </div>
-      </div>
-    </section>
+    </aside>
 
-    <!-- FORMULARIO -->
-    <section id="viewForm" class="hidden">
-      <div class="page-head">
-        <div>
-          <h2 id="formTitle">Nuevo Registro</h2>
-          <div class="sub">Complete la información del artículo. Los campos con listas incluyen el botón ＋ para gestionar opciones.</div>
+    <!-- CONTENIDO -->
+    <main class="content">
+      <!-- GRID -->
+      <section id="viewGrid">
+        <div class="page-head">
+          <div>
+            <h2 id="pageTitle">Registros</h2>
+            <div class="sub" id="pageSub"></div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-ghost" onclick="exportExcel()">⬇ Descargar Excel</button>
+            <button class="btn-primary" id="addBtn" onclick="openForm()">＋ Nuevo Registro</button>
+          </div>
         </div>
-        <button class="btn-ghost" onclick="showGrid()">← Volver al listado</button>
-      </div>
-      <div class="card">
-        <div class="form-grid" id="formFields"></div>
-        <div class="form-foot">
-          <button class="btn-ghost" onclick="showGrid()">Cancelar</button>
-          <button class="btn-primary" id="formSaveBtn" onclick="saveRecord()">Guardar</button>
+        <div class="card">
+          <div class="tbl-wrap">
+            <table id="mainTable"><thead id="mainHead"></thead><tbody id="mainBody"></tbody></table>
+          </div>
+          <div id="mainEmpty" class="empty hidden">
+            <div class="big">📋</div>
+            <div>No hay registros aún. Haga clic en el botón superior para comenzar.</div>
+          </div>
         </div>
-      </div>
-    </section>
-  </main>
+      </section>
+
+      <!-- FORMULARIO -->
+      <section id="viewForm" class="hidden">
+        <div class="page-head">
+          <div>
+            <h2 id="formTitle">Nuevo Registro</h2>
+            <div class="sub">Complete la información. Las listas incluyen el botón ＋ para gestionar sus opciones.</div>
+          </div>
+          <button class="btn-ghost" onclick="showGrid()">← Volver al listado</button>
+        </div>
+        <div class="card">
+          <div class="form-grid" id="formFields"></div>
+          <div class="form-foot">
+            <button class="btn-ghost" onclick="showGrid()">Cancelar</button>
+            <button class="btn-primary" id="formSaveBtn" onclick="saveRecord()">Guardar</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- CATÁLOGOS -->
+      <section id="viewCatalogos" class="hidden">
+        <div class="page-head">
+          <div><h2>Catálogos</h2><div class="sub">Mantenimiento de todas las listas desplegables</div></div>
+        </div>
+        <div class="card"><div class="tbl-wrap">
+          <table><thead><tr><th>Módulo</th><th>Lista</th><th>Opciones</th><th style="text-align:right">Acciones</th></tr></thead>
+          <tbody id="catBody"></tbody></table>
+        </div></div>
+      </section>
+    </main>
+  </div>
 </div>
 
 <!-- ===== MODAL: gestión de opciones ===== -->
 <div id="optModal" class="overlay hidden">
   <div class="modal wide">
-    <div class="modal-head">
-      <h3 id="optTitle">Opciones</h3>
-      <button class="x" onclick="closeOpt()">×</button>
-    </div>
+    <div class="modal-head"><h3 id="optTitle">Opciones</h3><button class="x" onclick="closeOpt()">×</button></div>
     <div class="modal-body">
-      <div class="opt-toolbar">
-        <h4 id="optHint">Listado de opciones disponibles</h4>
-        <button class="btn-plus" title="Agregar nueva opción" onclick="addOptionRow()">＋</button>
-      </div>
+      <div class="opt-toolbar"><h4 id="optHint">Listado de opciones disponibles</h4>
+        <button class="btn-plus" title="Agregar nueva opción" onclick="addOptionRow()">＋</button></div>
       <div class="tbl-wrap card" style="box-shadow:none;border:1px solid var(--line)">
-        <table>
-          <thead><tr><th>Opción</th><th style="width:150px;text-align:right">Acciones</th></tr></thead>
-          <tbody id="optBody"></tbody>
-        </table>
+        <table><thead><tr><th>Opción</th><th style="width:150px;text-align:right">Acciones</th></tr></thead>
+        <tbody id="optBody"></tbody></table>
       </div>
     </div>
-    <div class="modal-foot">
-      <button class="btn-ghost" onclick="closeOpt()">Cerrar</button>
-    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="closeOpt()">Cerrar</button></div>
   </div>
 </div>
 
 <!-- ===== MODAL: agregar/editar opción ===== -->
 <div id="optEditModal" class="overlay hidden">
   <div class="modal sm">
-    <div class="modal-head">
-      <h3 id="optEditTitle">Nueva Opción</h3>
-      <button class="x" onclick="closeOptEdit()">×</button>
-    </div>
+    <div class="modal-head"><h3 id="optEditTitle">Nueva Opción</h3><button class="x" onclick="closeOptEdit()">×</button></div>
     <div class="modal-body">
       <label>Valor de la opción <span class="req">*</span></label>
       <input id="optEditInput" placeholder="Escriba el valor...">
     </div>
-    <div class="modal-foot">
-      <button class="btn-no" onclick="closeOptEdit()">Cancelar</button>
-      <button class="btn-primary" onclick="saveOption()">Guardar</button>
-    </div>
+    <div class="modal-foot"><button class="btn-no" onclick="closeOptEdit()">Cancelar</button>
+      <button class="btn-primary" onclick="saveOption()">Guardar</button></div>
   </div>
 </div>
 
 <!-- ===== MODAL: confirmar eliminación ===== -->
 <div id="confirmModal" class="overlay hidden">
   <div class="modal sm">
-    <div class="modal-head"><h3>Confirmar eliminación</h3>
-      <button class="x" onclick="closeConfirm()">×</button></div>
-    <div class="modal-body">
-      <div class="confirm-msg">
-        <div class="ic">🗑️</div>
-        <p id="confirmText">¿Está seguro que desea eliminar el registro?</p>
-        <div class="rec" id="confirmRec"></div>
-      </div>
-    </div>
+    <div class="modal-head"><h3>Confirmar eliminación</h3><button class="x" onclick="closeConfirm()">×</button></div>
+    <div class="modal-body"><div class="confirm-msg"><div class="ic">🗑️</div>
+      <p id="confirmText">¿Está seguro que desea eliminar el registro?</p>
+      <div class="rec" id="confirmRec"></div></div></div>
     <div class="modal-foot" style="justify-content:center">
       <button class="btn-no" onclick="closeConfirm()">No</button>
-      <button class="btn-yes" onclick="confirmYes()">Sí, eliminar</button>
-    </div>
+      <button class="btn-yes" onclick="confirmYes()">Sí, eliminar</button></div>
   </div>
 </div>
 
 <script>
-const DATA = {"departamentos": ["CO.CB._CUIDADO_Y_BIENESTAR", "CO.DT._DIAGNOSTICO_Y_TECNOLOGIAS_DE_SOPORTE", "CO.EQ._ESPECIALIDADES_QUIRÚRGICAS", "CO.SC._SALUD_CARDIOVASCULAR", "CO.ST._SERVICIO_TÉCNICO", "CO.TE._TERAPIAS_ESPECIALIZADAS"], "dept_lines": {"CO.CB._CUIDADO_Y_BIENESTAR": ["CO.CB.1._HERIDAS", "CO.CB.2._NUTRICIÓN", "CO.CB.3._MUESTRAS"], "CO.DT._DIAGNOSTICO_Y_TECNOLOGIAS_DE_SOPORTE": ["CO.DT.1._TERAPIAS_QUIRURGICAS", "CO.DT.2._MUESTRAS"], "CO.EQ._ESPECIALIDADES_QUIRÚRGICAS": ["CO.EQ.1._CUIDADO_HOSPITALARIO", "CO.EQ.2._TERAPIAS_QUIRURGICAS", "CO.EQ.3._ORTOPEDÍA", "CO.EQ.4._MUESTRA"], "CO.SC._SALUD_CARDIOVASCULAR": ["CO.SC.1._CARDIOLOGÍA_INTERVENCIONISTA", "CO.SC.2._ESTRUCTURAL", "CO.SC.3._NEUROVASCULAR", "CO.SC.4._VASCULAR_PERIFERICO", "CO.SC.5._MUESTRAS"], "CO.ST._SERVICIO_TÉCNICO": ["CO.ST.1._HERRAMIENTA", "CO.ST.2._REPUESTOS", "CO.ST.3._SERVICIOS"], "CO.TE._TERAPIAS_ESPECIALIZADAS": ["CO.TE.1._CUIDADO_CRÍTICO", "CO.TE.2._CUIDADO_CRÓNICO", "CO.TE.3._MUESTRA"]}, "familias": {"CO.CB.1._HERIDAS": ["CO.CB.1.1. PIE DIABETICO", "CO.CB.1.2. CUIDADO DE LA PIEL"], "CO.CB.2._NUTRICIÓN": ["CO.CB.2.1. DIABETES", "CO.CB.2.2. ESPECIALIZADA", "CO.CB.2.3. GENERAL", "CO.CB.2.4. PEDIATRICA"], "CO.CB.3._MUESTRAS": ["CO.CB.3.1. HERIDAS", "CO.CB.3.2. DISPOSITIVOS Y EQUIPOS NUTRICIONALES", "CO.CB.3.3. NUTRICIÓN"], "CO.DT.1._TERAPIAS_QUIRURGICAS": ["CO.DT.1.1. SOPORTE QUIRURGICO", "CO.DT.1.2. GINECOLOGIA (EQUIPOS)"], "CO.DT.2._MUESTRAS": ["CO.DT.2.1. TERAPIAS QUIRURGICA", "CO.DT.2.2. MUESTRA"], "CO.EQ.1._CUIDADO_HOSPITALARIO": ["CO.EQ.1.1. ANESTESIA", "CO.EQ.1.2. BOMBA INFUSION"], "CO.EQ.2._TERAPIAS_QUIRURGICAS": ["CO.EQ.2.1. GINECOLOGIA", "CO.EQ.2.2. UROLOGIA", "CO.EQ.2.3. ENDOSCOPÍA", "CO.EQ.2.4. INSTRUMENTAL DE CIRUGIA ABIERTA", "CO.EQ.2.5. LAPAROSCOPIA", "CO.EQ.2.6. TECNOLOGÍA DE CIERRE", "CO.EQ.2.7. MOTORES DE CIRUGIA", "CO.EQ.2.8. GASTROSTOMIA", "CO.EQ.2.9. SOPORTE QUIRURGICO"], "CO.EQ.3._ORTOPEDÍA": ["CO.EQ.3.1. MOTORES", "CO.EQ.3.10. TORNILLOS", "CO.EQ.3.2. TRAUMA", "CO.EQ.3.3. ORTOPEDÍA", "CO.EQ.3.4. FIJACIÓN TEMPORAL", "CO.EQ.3.5. INSTRUMENTAL TRAUMA", "CO.EQ.3.6. MINI FRAGMENTOS", "CO.EQ.3.7. PEQUEÑOS FRAGMENTOS", "CO.EQ.3.8. SIERRAS", "CO.EQ.3.9. GRANDES FRAGMENTOS"], "CO.EQ.4._MUESTRA": ["CO.EQ.4.1. TERAPIAS QUIRURGICA", "CO.EQ.4.4. ANESTESIA"], "CO.SC.1._CARDIOLOGÍA_INTERVENCIONISTA": ["CO.SC.1.1. ACCESORIOS PARA PROCEDIMIENTOS CARDIOVASCULARES", "CO.SC.1.2. GUIAS CORONARIAS", "CO.SC.1.3. STENTS CORONARIOS", "CO.SC.1.4. BALONES CORONARIOS"], "CO.SC.2._ESTRUCTURAL": ["CO.SC.2.1. TAVI", "CO.SC.2.2. VALVULAS BIOLOGICAS", "CO.SC.2.3. ANILLOS", "CO.SC.2.4. MITRACLIP", "CO.SC.2.5. AMPLATZER", "CO.SC.2.6. VALVULAS MECANICAS", "CO.SC.2.7. PARCHES DE PERICARDIO"], "CO.SC.3._NEUROVASCULAR": ["CO.SC.3.1. DISPOSITIVOS PARA EMBOLIZACION", "CO.SC.3.2. STENTS NEUROVASCULAR", "CO.SC.3.3. MICROCATETER", "CO.SC.3.4. DISPOSITIVOS PARA REMODELAMIENTO", "CO.SC.3.5. MICROGUÍAS"], "CO.SC.4._VASCULAR_PERIFERICO": ["CO.SC.4.1. STENTS PERIFERICOS", "CO.SC.4.2. ACCESORIOS VASCULAR PERIFERICO", "CO.SC.4.3. BALONES PERIFERICOS", "CO.SC.4.4. DISPOSITIVOS PARA PROTECCION DISTAL Y PROXIMAL", "CO.SC.4.5. GUIAS PERIFERICAS"], "CO.SC.5._MUESTRAS": ["CO.SC.5.1. ESTRUCTURAL", "CO.SC.5.2. CARDIOLOGÍA INTERVENCIONISTA", "CO.SC.5.3. NEUROVASCULAR", "CO.SC.5.5. MUESTRA", "CO.SC.5.6. TAVI"], "CO.ST.1._HERRAMIENTA": ["CO.ST.1.1. HERRAMIENTA USO GENERAL"], "CO.ST.2._REPUESTOS": ["CO.ST.2.1. BOMBA INFUSION", "CO.ST.2.10. LAMPARAS", "CO.ST.2.11. BILIRRUBINÓMETRO", "CO.ST.2.12. VENTILACION MECANICA", "CO.ST.2.13. HEMOFILTRADOR", "CO.ST.2.14. PERITONEAL", "CO.ST.2.15. ESTRUCTURAL", "CO.ST.2.16. LLENADORA PINNACLE", "CO.ST.2.17. ACCESORIOS PARA VENTILACION MECANICA", "CO.ST.2.18. UROLOGIA", "CO.ST.2.19. FOTOTERAPIA", "CO.ST.2.2. HEMODIALISIS", "CO.ST.2.20. DERMATOMO", "CO.ST.2.22. SISTEMAS TRATAMIENTO DE AGUA", "CO.ST.2.3. MONITORES", "CO.ST.2.4. OSMOSIS INVERSA", "CO.ST.2.5. MESAS QUIRURGICAS", "CO.ST.2.6. SILLA GINECOLOGICAS", "CO.ST.2.7. ANESTESIA", "CO.ST.2.8. INCUBADORAS", "CO.ST.2.9. INFRAESTRUCTURA", "CO.ST.2.21. INCUBADORAS"], "CO.ST.3._SERVICIOS": ["CO.ST.3.1. MANO DE OBRA"], "CO.TE.1._CUIDADO_CRÍTICO": ["CO.TE.1.1. HIGIENE BRONQUIAL", "CO.TE.1.10. EXPANSION PULMONAR", "CO.TE.1.11. TERAPIAS INTRAVENOSAS", "CO.TE.1.12. NUTRICIÓN PARENTERAL Y CONTROL DE LA VOLEMIA", "CO.TE.1.13. CATETER DE DREANJE PLEURAL", "CO.TE.1.14. ACCESORIOS PARA NUTRICION ENTERAL", "CO.TE.1.15. ANESTESIA", "CO.TE.1.16. CUIDADO RESPIRATORIO", "CO.TE.1.2. MONITOREO", "CO.TE.1.3. VENTILACION MECANICA", "CO.TE.1.4. LABORATORIO CLÍNICO", "CO.TE.1.5. CUIDADO NEONATAL", "CO.TE.1.6. TRRC", "CO.TE.1.7. BIOSEGURIDAD", "CO.TE.1.8. BOMBA INFUSION", "CO.TE.1.9. SUPLEMENTOS DE VÍA AEREA"], "CO.TE.2._CUIDADO_CRÓNICO": ["CO.TE.2.1. HEMODIALISIS", "CO.TE.2.2. HEMATO-ONCOLOGÍA Y CUIDADO PALIATIVO", "CO.TE.2.3. PERITONEAL"], "CO.TE.3._MUESTRA": ["CO.TE.3.1. CUIDADO CRÍTICO", "CO.TE.3.2. CUIDADO CRÓNICO"]}, "lote": ["Si", "No"], "empaque": ["Unidad", "Caja", "Bolsa"], "origen": ["CAN - Canadá", "CHN - China", "COL - Colombia", "CRI - Costa Rica", "SLV - El Salvador", "FRA - Francia", "DEU - Alemania", "GTM - Guatemala", "HND - Honduras", "ITA - Italia", "JPN - Japón", "MEX - México", "NLD - Países Bajos", "NIC - Nicaragua", "PAN - Panamá", "PER - Perú", "ESP - España", "TWN - Taiwán", "GBR - Reino Unido", "USA - Estados Unidos"], "grupo_articulo": ["Cuidado Critico", "Cuidado Crónico", "Terapias Quirúrgicas", "Ortopédia", "Salud Cardiovascular", "Cuidado y Bienestar", "Diagnóstico y Tecnologías de Soporte", "Servicio Técnico"], "centro_costo": ["20-2001-200102", "20-2001-200103", "20-2002-200202", "20-2002-200203", "20-2003-200301", "20-2004-200404", "20-2005-200502", "20-2005-200503"], "proveedores": ["00001 - ABBOTT VASCULAR", "00006 - FRESENIUS MEDICAL CARE", "00007 - INTRA SPECIAL CATHETERS", "00009 - VICTUS", "00010 - TORAY MARKETING AND SALES AMERICA INC", "00012 - SMITHS MEDICAL INTERNATIONAL LTD", "00013 - SUPPORT ADVANCED MEDICAL NUTRITION", "00014 - DRAGERWERK AG & CO KGAA", "00015 - ABBOT VASCULAR DEVICES HOLAND", "00023 - CORPORACIÓN BIOMUR S A", "00065 - MCMILLAN COMPANY INC", "00075 - HANNA INSTRUMENTS COSTA RICA SOCIEDAD ANONIMA", "00098 - D.A. MEDICA DE COSTA RICA S.A.", "00152 - CYTOSORBENTS EUROPE GMBH", "00153 - B BRAUN SURGICAL S A ( BARCELONA )", "00169 - FRESENIUS MEDICAL CARE PANAMA", "00210 - AESCULAP AG", "00236 - APEX MEDICAL", "00353 - B.BRAUN MEDICAL DE MEXICO S.A.P.I  DE C.V.", "00357 - AQUAPURA S A", "00369 - ELVATRON S A", "00372 - FRESENIUS ANDINA S A S", "00398 - MERIT MEDICAL", "00413 - B BRAUN MEDICAL INC", "00415 - GERARD O ELSNER LTDA", "00426 - ORION INTERMED S J D M S A", "00441 - B BRAUN MELSUNGEN AG", "00446 - B BRAUN MEDICAL CENTRAL AMERICA & CARIBE S A", "00449 - CAPRIS", "00465 - SCHMITZ U SOHNE GMBH & CO KG", "00503 - BOSTON SCIENTIFIC INTERNATIONAL BV", "00505 - MEDTRONIC LOGISTICS LLC", "00516 - B BRAUN MEDICAL PERU S A", "00521 - PRAXAIR COSTA RICA S.A.", "00541 - NEOMEDIC INTERNATIONAL", "00549 - PROVEEDORES ONLINE", "00554 - SUPLI SERVICIOS S A", "00557 - MEDITEK SERVICES SOCIEDAD ANONIMA", "00565 - OPTIMA MOLLITER SRL", "00646 - ST JUDE (ABBOTT LABORATORIES)", "00715 - BSN MEDICAL DC S.A. DE C.V", "00748 - YIRE MEDICA H P SOCIEDAD ANONIMA", "00757 - Advance Laboratorios S.A", "00779 - Medtronic-Kanghui", "00872 - DORNIER MEDTECH AMERICA INC", "00881 - DRAEGER COLOMBIA S.A", "00889 - ROMANAS OCONY S.A.", "00890 - KAMS INDUSTRIAL, S.A.", "00933 - AVANOS", "00961 - CHARDER ELECTRONIC CO., LTD", "00986 - CLINARIS GMBH"], "tipo_implante": ["Permanente", "Temporal", "No", "Por definir"], "unidades": ["Unidad", "Caja", "Bolsa", "Paquete", "Kit", "Frasco", "Ampolla", "Rollo"], "es_implantable": ["Si", "No"]};
+const APPDATA = {"COD": {"departamentos": ["CO.CB._CUIDADO_Y_BIENESTAR", "CO.DT._DIAGNOSTICO_Y_TECNOLOGIAS_DE_SOPORTE", "CO.EQ._ESPECIALIDADES_QUIRÚRGICAS", "CO.SC._SALUD_CARDIOVASCULAR", "CO.ST._SERVICIO_TÉCNICO", "CO.TE._TERAPIAS_ESPECIALIZADAS"], "dept_lines": {"CO.CB._CUIDADO_Y_BIENESTAR": ["CO.CB.1._HERIDAS", "CO.CB.2._NUTRICIÓN", "CO.CB.3._MUESTRAS"], "CO.DT._DIAGNOSTICO_Y_TECNOLOGIAS_DE_SOPORTE": ["CO.DT.1._TERAPIAS_QUIRURGICAS", "CO.DT.2._MUESTRAS"], "CO.EQ._ESPECIALIDADES_QUIRÚRGICAS": ["CO.EQ.1._CUIDADO_HOSPITALARIO", "CO.EQ.2._TERAPIAS_QUIRURGICAS", "CO.EQ.3._ORTOPEDÍA", "CO.EQ.4._MUESTRA"], "CO.SC._SALUD_CARDIOVASCULAR": ["CO.SC.1._CARDIOLOGÍA_INTERVENCIONISTA", "CO.SC.2._ESTRUCTURAL", "CO.SC.3._NEUROVASCULAR", "CO.SC.4._VASCULAR_PERIFERICO", "CO.SC.5._MUESTRAS"], "CO.ST._SERVICIO_TÉCNICO": ["CO.ST.1._HERRAMIENTA", "CO.ST.2._REPUESTOS", "CO.ST.3._SERVICIOS"], "CO.TE._TERAPIAS_ESPECIALIZADAS": ["CO.TE.1._CUIDADO_CRÍTICO", "CO.TE.2._CUIDADO_CRÓNICO", "CO.TE.3._MUESTRA"]}, "familias": {"CO.CB.1._HERIDAS": ["CO.CB.1.1. PIE DIABETICO", "CO.CB.1.2. CUIDADO DE LA PIEL"], "CO.CB.2._NUTRICIÓN": ["CO.CB.2.1. DIABETES", "CO.CB.2.2. ESPECIALIZADA", "CO.CB.2.3. GENERAL", "CO.CB.2.4. PEDIATRICA"], "CO.CB.3._MUESTRAS": ["CO.CB.3.1. HERIDAS", "CO.CB.3.2. DISPOSITIVOS Y EQUIPOS NUTRICIONALES", "CO.CB.3.3. NUTRICIÓN"], "CO.DT.1._TERAPIAS_QUIRURGICAS": ["CO.DT.1.1. SOPORTE QUIRURGICO", "CO.DT.1.2. GINECOLOGIA (EQUIPOS)"], "CO.DT.2._MUESTRAS": ["CO.DT.2.1. TERAPIAS QUIRURGICA", "CO.DT.2.2. MUESTRA"], "CO.EQ.1._CUIDADO_HOSPITALARIO": ["CO.EQ.1.1. ANESTESIA", "CO.EQ.1.2. BOMBA INFUSION"], "CO.EQ.2._TERAPIAS_QUIRURGICAS": ["CO.EQ.2.1. GINECOLOGIA", "CO.EQ.2.2. UROLOGIA", "CO.EQ.2.3. ENDOSCOPÍA", "CO.EQ.2.4. INSTRUMENTAL DE CIRUGIA ABIERTA", "CO.EQ.2.5. LAPAROSCOPIA", "CO.EQ.2.6. TECNOLOGÍA DE CIERRE", "CO.EQ.2.7. MOTORES DE CIRUGIA", "CO.EQ.2.8. GASTROSTOMIA", "CO.EQ.2.9. SOPORTE QUIRURGICO"], "CO.EQ.3._ORTOPEDÍA": ["CO.EQ.3.1. MOTORES", "CO.EQ.3.10. TORNILLOS", "CO.EQ.3.2. TRAUMA", "CO.EQ.3.3. ORTOPEDÍA", "CO.EQ.3.4. FIJACIÓN TEMPORAL", "CO.EQ.3.5. INSTRUMENTAL TRAUMA", "CO.EQ.3.6. MINI FRAGMENTOS", "CO.EQ.3.7. PEQUEÑOS FRAGMENTOS", "CO.EQ.3.8. SIERRAS", "CO.EQ.3.9. GRANDES FRAGMENTOS"], "CO.EQ.4._MUESTRA": ["CO.EQ.4.1. TERAPIAS QUIRURGICA", "CO.EQ.4.4. ANESTESIA"], "CO.SC.1._CARDIOLOGÍA_INTERVENCIONISTA": ["CO.SC.1.1. ACCESORIOS PARA PROCEDIMIENTOS CARDIOVASCULARES", "CO.SC.1.2. GUIAS CORONARIAS", "CO.SC.1.3. STENTS CORONARIOS", "CO.SC.1.4. BALONES CORONARIOS"], "CO.SC.2._ESTRUCTURAL": ["CO.SC.2.1. TAVI", "CO.SC.2.2. VALVULAS BIOLOGICAS", "CO.SC.2.3. ANILLOS", "CO.SC.2.4. MITRACLIP", "CO.SC.2.5. AMPLATZER", "CO.SC.2.6. VALVULAS MECANICAS", "CO.SC.2.7. PARCHES DE PERICARDIO"], "CO.SC.3._NEUROVASCULAR": ["CO.SC.3.1. DISPOSITIVOS PARA EMBOLIZACION", "CO.SC.3.2. STENTS NEUROVASCULAR", "CO.SC.3.3. MICROCATETER", "CO.SC.3.4. DISPOSITIVOS PARA REMODELAMIENTO", "CO.SC.3.5. MICROGUÍAS"], "CO.SC.4._VASCULAR_PERIFERICO": ["CO.SC.4.1. STENTS PERIFERICOS", "CO.SC.4.2. ACCESORIOS VASCULAR PERIFERICO", "CO.SC.4.3. BALONES PERIFERICOS", "CO.SC.4.4. DISPOSITIVOS PARA PROTECCION DISTAL Y PROXIMAL", "CO.SC.4.5. GUIAS PERIFERICAS"], "CO.SC.5._MUESTRAS": ["CO.SC.5.1. ESTRUCTURAL", "CO.SC.5.2. CARDIOLOGÍA INTERVENCIONISTA", "CO.SC.5.3. NEUROVASCULAR", "CO.SC.5.5. MUESTRA", "CO.SC.5.6. TAVI"], "CO.ST.1._HERRAMIENTA": ["CO.ST.1.1. HERRAMIENTA USO GENERAL"], "CO.ST.2._REPUESTOS": ["CO.ST.2.1. BOMBA INFUSION", "CO.ST.2.10. LAMPARAS", "CO.ST.2.11. BILIRRUBINÓMETRO", "CO.ST.2.12. VENTILACION MECANICA", "CO.ST.2.13. HEMOFILTRADOR", "CO.ST.2.14. PERITONEAL", "CO.ST.2.15. ESTRUCTURAL", "CO.ST.2.16. LLENADORA PINNACLE", "CO.ST.2.17. ACCESORIOS PARA VENTILACION MECANICA", "CO.ST.2.18. UROLOGIA", "CO.ST.2.19. FOTOTERAPIA", "CO.ST.2.2. HEMODIALISIS", "CO.ST.2.20. DERMATOMO", "CO.ST.2.22. SISTEMAS TRATAMIENTO DE AGUA", "CO.ST.2.3. MONITORES", "CO.ST.2.4. OSMOSIS INVERSA", "CO.ST.2.5. MESAS QUIRURGICAS", "CO.ST.2.6. SILLA GINECOLOGICAS", "CO.ST.2.7. ANESTESIA", "CO.ST.2.8. INCUBADORAS", "CO.ST.2.9. INFRAESTRUCTURA", "CO.ST.2.21. INCUBADORAS"], "CO.ST.3._SERVICIOS": ["CO.ST.3.1. MANO DE OBRA"], "CO.TE.1._CUIDADO_CRÍTICO": ["CO.TE.1.1. HIGIENE BRONQUIAL", "CO.TE.1.10. EXPANSION PULMONAR", "CO.TE.1.11. TERAPIAS INTRAVENOSAS", "CO.TE.1.12. NUTRICIÓN PARENTERAL Y CONTROL DE LA VOLEMIA", "CO.TE.1.13. CATETER DE DREANJE PLEURAL", "CO.TE.1.14. ACCESORIOS PARA NUTRICION ENTERAL", "CO.TE.1.15. ANESTESIA", "CO.TE.1.16. CUIDADO RESPIRATORIO", "CO.TE.1.2. MONITOREO", "CO.TE.1.3. VENTILACION MECANICA", "CO.TE.1.4. LABORATORIO CLÍNICO", "CO.TE.1.5. CUIDADO NEONATAL", "CO.TE.1.6. TRRC", "CO.TE.1.7. BIOSEGURIDAD", "CO.TE.1.8. BOMBA INFUSION", "CO.TE.1.9. SUPLEMENTOS DE VÍA AEREA"], "CO.TE.2._CUIDADO_CRÓNICO": ["CO.TE.2.1. HEMODIALISIS", "CO.TE.2.2. HEMATO-ONCOLOGÍA Y CUIDADO PALIATIVO", "CO.TE.2.3. PERITONEAL"], "CO.TE.3._MUESTRA": ["CO.TE.3.1. CUIDADO CRÍTICO", "CO.TE.3.2. CUIDADO CRÓNICO"]}, "lote": ["Si", "No"], "empaque": ["Unidad", "Caja", "Bolsa"], "origen": ["CAN - Canadá", "CHN - China", "COL - Colombia", "CRI - Costa Rica", "SLV - El Salvador", "FRA - Francia", "DEU - Alemania", "GTM - Guatemala", "HND - Honduras", "ITA - Italia", "JPN - Japón", "MEX - México", "NLD - Países Bajos", "NIC - Nicaragua", "PAN - Panamá", "PER - Perú", "ESP - España", "TWN - Taiwán", "GBR - Reino Unido", "USA - Estados Unidos"], "grupo_articulo": ["Cuidado Critico", "Cuidado Crónico", "Terapias Quirúrgicas", "Ortopédia", "Salud Cardiovascular", "Cuidado y Bienestar", "Diagnóstico y Tecnologías de Soporte", "Servicio Técnico"], "centro_costo": ["20-2001-200102", "20-2001-200103", "20-2002-200202", "20-2002-200203", "20-2003-200301", "20-2004-200404", "20-2005-200502", "20-2005-200503"], "proveedores": ["00001 - ABBOTT VASCULAR", "00006 - FRESENIUS MEDICAL CARE", "00007 - INTRA SPECIAL CATHETERS", "00009 - VICTUS", "00010 - TORAY MARKETING AND SALES AMERICA INC", "00012 - SMITHS MEDICAL INTERNATIONAL LTD", "00013 - SUPPORT ADVANCED MEDICAL NUTRITION", "00014 - DRAGERWERK AG & CO KGAA", "00015 - ABBOT VASCULAR DEVICES HOLAND", "00023 - CORPORACIÓN BIOMUR S A", "00065 - MCMILLAN COMPANY INC", "00075 - HANNA INSTRUMENTS COSTA RICA SOCIEDAD ANONIMA", "00098 - D.A. MEDICA DE COSTA RICA S.A.", "00152 - CYTOSORBENTS EUROPE GMBH", "00153 - B BRAUN SURGICAL S A ( BARCELONA )", "00169 - FRESENIUS MEDICAL CARE PANAMA", "00210 - AESCULAP AG", "00236 - APEX MEDICAL", "00353 - B.BRAUN MEDICAL DE MEXICO S.A.P.I  DE C.V.", "00357 - AQUAPURA S A", "00369 - ELVATRON S A", "00372 - FRESENIUS ANDINA S A S", "00398 - MERIT MEDICAL", "00413 - B BRAUN MEDICAL INC", "00415 - GERARD O ELSNER LTDA", "00426 - ORION INTERMED S J D M S A", "00441 - B BRAUN MELSUNGEN AG", "00446 - B BRAUN MEDICAL CENTRAL AMERICA & CARIBE S A", "00449 - CAPRIS", "00465 - SCHMITZ U SOHNE GMBH & CO KG", "00503 - BOSTON SCIENTIFIC INTERNATIONAL BV", "00505 - MEDTRONIC LOGISTICS LLC", "00516 - B BRAUN MEDICAL PERU S A", "00521 - PRAXAIR COSTA RICA S.A.", "00541 - NEOMEDIC INTERNATIONAL", "00549 - PROVEEDORES ONLINE", "00554 - SUPLI SERVICIOS S A", "00557 - MEDITEK SERVICES SOCIEDAD ANONIMA", "00565 - OPTIMA MOLLITER SRL", "00646 - ST JUDE (ABBOTT LABORATORIES)", "00715 - BSN MEDICAL DC S.A. DE C.V", "00748 - YIRE MEDICA H P SOCIEDAD ANONIMA", "00757 - Advance Laboratorios S.A", "00779 - Medtronic-Kanghui", "00872 - DORNIER MEDTECH AMERICA INC", "00881 - DRAEGER COLOMBIA S.A", "00889 - ROMANAS OCONY S.A.", "00890 - KAMS INDUSTRIAL, S.A.", "00933 - AVANOS", "00961 - CHARDER ELECTRONIC CO., LTD", "00986 - CLINARIS GMBH"], "tipo_implante": ["Permanente", "Temporal", "No", "Por definir"], "unidades": ["Unidad", "Caja", "Bolsa", "Paquete", "Kit", "Frasco", "Ampolla", "Rollo"], "es_implantable": ["Si", "No"]}, "ORD": {"proveedores": ["00001 ABBOTT VASCULAR", "00004 BIOSUD LATINO AMERICA", "00006 FRESENIUS MEDICAL CARE", "00007 INTRA SPECIAL CATHETERS", "00008 OSCOR INC", "00009 VICTUS", "00010 TORAY MARKETING AND SALES AMERICA INC", "00011 FRESENIUS MEDICAL CARE CRCOLOMBIA S A", "00012 SMITHS MEDICAL INTERNATIONAL LTD", "00013 SUPPORT ADVANCED MEDICAL NUTRITION", "00014 DRAGERWERK AG & CO KGAA", "00015 ABBOT VASCULAR DEVICES HOLAND", "00023 CORPORACIÓN BIOMUR S A", "00065 MCMILLAN COMPANY INC", "00075 HANNA INSTRUMENTS COSTA RICA SOCIEDAD ANONIMA", "00096 CORPORACIÓN COMERCIAL EL LAGAR S A", "00098 D.A. MEDICA DE COSTA RICA S.A.", "00109 STT GROUP DE COSTA RICA S A", "00152 CYTOSORBENTS EUROPE GMBH", "00153 B BRAUN SURGICAL S A ( BARCELONA )", "00169 FRESENIUS MEDICAL CARE PANAMA", "00189 IMT ANALYTICS AG", "00191 MANGUERAS Y FITINERIAS SOCIEDAD ANONIMA", "00210 AESCULAP AG", "00236 APEX MEDICAL", "00243 OPHIR-SPIRICON LLC", "00249 RENTAMETRIC INTERNATIONAL INC", "00353 B.BRAUN MEDICAL DE MEXICO S.A.P.I  DE C.V.", "00357 AQUAPURA S A", "00369 ELVATRON S A", "00372 FRESENIUS ANDINA S A S", "00398 MERIT MEDICAL", "00413 B BRAUN MEDICAL INC", "00415 GERARD O ELSNER LTDA", "00426 ORION INTERMED S J D M S A", "00429 DRAGER PANAMÁ COMERCIAL S DE RL", "00441 B BRAUN MELSUNGEN AG", "00446 B BRAUN MEDICAL CENTRAL AMERICA & CARIBE S A", "00449 CAPRIS", "00450 FRESENIUS MEDICAL CARE DE MEXICO S A DE C V", "00461 GCX CORPORATION", "00465 SCHMITZ U SOHNE GMBH & CO KG", "00477 NOXBOX LTD", "00503 BOSTON SCIENTIFIC INTERNATIONAL BV", "00505 MEDTRONIC LOGISTICS LLC", "00515 V M G HEALTHCARE PRODUCTS SOCIEDAD ANONIMA", "00516 B BRAUN MEDICAL PERU S A", "00521 PRAXAIR COSTA RICA S.A.", "00535 TERMO TRACE S A", "00538 SATEC S A", "00540 KENDALL INNOVADORES EN CUIDADOS AL PACIENTE SOCIEDAD ANONIMA", "00541 NEOMEDIC INTERNATIONAL", "00549 PROVEEDORES ONLINE", "00557 MEDITEK SERVICES SOCIEDAD ANONIMA", "00565 OPTIMA MOLLITER SRL", "00586 NOLLFIN TRADE SA", "00646 ST JUDE (ABBOTT LABORATORIES)", "00648 GMC INSTRUMENTS", "00715 BSN MEDICAL DC S.A. DE C.V"], "productos": ["2B61016 — MAIN PCB ASSY", "2B61097 — Cable AC Accumate", "2B61121 — DEADZONE ASSY", "9100011 — DOOR ASSY", "9100012 — PUMP ASSY", "9100013 — MOTOR ASSY", "9100016A — FRONT CASE ASS'Y", "9100017A — REAR CASE ASSY", "9100018 — BUZZER ASSY", "9100019 — SERIAL ASSY", "9100020 — POWER SW. ASSY", "9100021 — ENCODER ASSY", "9100023 — BUBBLE ASSY", "9100024 — REED ASSY", "0010-00721 — Filtro para uso en cámara de endoscopia", "0010-0210 — Laser para resección transuretral.", "0010-0721 — Filtro para uso en cámara de endoscopia", "0010-2090 — Fibra  para GreenLight HPS", "0010-2400 — Fibra para cirugia laser de prostata Moxy", "0010-2400(MUESTRA) — fibra láser de prostata", "0010-7030 — Anteojos de protección para personal de sala de operaciones", "0010-9450 — FLASHLAMP 6MM LM5400 STNLT", "0086774R — Intrafix® Primeline UV-protect", "0100-12LV — sonda de alimentacion Halyard MIC*G", "0100-14LV — sonda de alimentacion Halyard MIC*G", "0100-16LV — sonda de alimentacion Halyard MIC*G", "0100-18 — sonda de alimentacion Halyard MIC*G", "0100-18 (MUESTRA) — sonda de alimentacion Halyard MIC*G", "0100-20 — sonda de alimentacion Halyard MIC*G", "0100-22 — sonda de alimentacion Halyard MIC*G", "0100-24 — sonda de alimentacion Halyard MIC*G", "0100-26 — sonda de alimentacion Halyard MIC*G", "0100-28 — sonda de alimentacion Halyard MIC*G", "0100-30 — sonda de alimentacion Halyard MIC*G", "0110-12LV — sonda de alimentacion en bolo MIC*G", "0110-14LV — sonda de alimentacion Halyard MIC*G", "0110-16LV — sonda de alimentacion Halyard MIC*G", "0110-18 — sonda de alimentacion Halyard MIC*G", "0110-20 — sonda de alimentacion Halyard MIC*G", "0110-22 — sonda de alimentacion Halyard MIC*G", "0110-24 — sonda de alimentacion Halyard MIC*G", "0112-14LV — sonda de alimentacion por gastrostomia", "0112-16LV — sonda de alimentacion por gastrostomia", "0112-18 — sonda de alimentacion por gastrostomia", "0112-20 — sonda de alimentacion por gastrostomia", "0112-22 — sonda de alimentacion por gastrostomia", "0112-24 — sonda de alimentacion por gastrostomia", "011-42586-05 — Transductor Neonatal", "011-42586-05(MUESTRA — Transductor Neonatal(MUESTRA)", "011-42632-05 — Transductor con líinea descartable", "011-42632-05. — Kit de Transductor Victus y Cable", "011-42654-66 — Transductor con Safeset Neonatal", "011-42661-36 — Cable para transductor de presión ICU", "011-C1000 — Conector Clave", "011-C1000(MUESTRA) — Conector Clave", "011-C2002 — Conector Clave con Extensión de 18cm", "011-C2005-2 — Conector  Bifurcado en Y", "011-C3300 — Microclave", "011-C3319 — Conector microclave con extensión de 15cm", "011-C3319(MUESTRA) — Conector microclave con extensión de 15cm", "011-C3322 — Conector Clave doble con alargadera de 5\" x 13cm x 0.33ml", "011-C3323 — Microclave Trifurcado Small Bore de 7\" x 18cm x 0.56ml", "011-CH12 — Espiga para mezcla de quimioterapia", "011-CH200S — Spiros", "011CS-10 — Conector Clave con espiga para bolsa de suero", "011CS-10(MUESTRA) — Conector Clave con espiga para bolsa de suero", "011-CS-15 — Conector clave para bolsa de suero", "011-CS-15(MUESTRA) — Conector clave para bolsa de suero", "011-CV-100 — Conector para frasco multidosis con conector clave", "011-CV-100(MUESTRA) — Conector para frasco multidosis con conector clave", "011-MC3302 — Microclave Clear con Extensión", "011-MC3322 — Microclave Clear", "011-MC3322(MUESTRA) — Microclave Clear", "011-MC3323 — Microclave Clear con extensión Trifurcada", "011-MC3323(MUESTRA) — Microclave Clear con extensión Trifurcada", "011-NC100 — Conector Neutron", "011-NC100(MUESTRA) — Conector Neutron", "0120-12-0.8 — sonda de alimentacion 12Fr", "0120-12-1.2 — sonda de alimentacion 12Fr", "0120-12-1.5 — sonda de alimentacion 12Fr", "0120-12-1.7 — sonda de alimentacion 12Fr", "0120-12-2.0 — sonda de alimentacion 12Fr", "0120-12-2.5 — sonda de alimentacion 12Fr", "0120-12-3.0 — sonda de alimentacion 12Fr", "0120-12-3.5 — sonda de alimentacion 12Fr", "0120-12-4.0 — sonda de alimentacion 12Fr", "0120-14-0.8 — Sonda de alimentacion 14 Fr", "0120-14-1.0 — Sonda de alimentacion 14 Fr", "0120-14-1.2 — Sonda de alimentacion 14 Fr", "0120-14-1.5 — Sonda de alimentacion 14 Fr", "0120-14-1.7 — Sonda de alimentacion 14 Fr", "0120-14-2.0 — Sonda de alimentacion 14 Fr", "0120-14-2.3 — Sonda de alimentacion 14 Fr", "0120-14-2.5 — Sonda de alimentacion 14 Fr", "0120-14-2.7 — Sonda de alimentacion 14 Fr", "0120-14-3.0 — Sonda de alimentacion 14 Fr", "0120-14-3.5 — Sonda de alimentacion 14 Fr", "0120-14-4.0 — Sonda de alimentacion 14 Fr", "0120-14-4.5 — Sonda de alimentacion 14 Fr", "0120-14-5.0 — Sonda de alimentacion 14 Fr", "0120-16-0.8 — sonda de alimentacion 16Fr", "0120-16-1.0 — sonda de alimentacion 16Fr", "0120-16-1.2 — sonda de alimentacion de Acceso gástrico", "0120-16-1.5 — sonda de alimentacion 16Fr", "0120-16-1.7 — sonda de alimentacion 16Fr", "0120-16-2.0 — sonda de alimentacion 16Fr", "0120-16-2.3 — sonda de alimentacion de Acceso gástrico", "0120-16-2.5 — sonda de alimentacion 16Fr", "0120-16-2.7 — sonda de alimentacion 16Fr", "0120-16-3.0 — sonda de alimentacion 16Fr", "0120-16-3.5 — sonda de alimentacion 16Fr", "0120-16-4.0 — sonda de alimentacion de Acceso gástrico", "0120-16-4.5 — sonda de alimentacion de Acceso gástrico", "0120-16-5.0 — sonda de alimentacion 16Fr", "0120-18-0.8 — sonda de alimentacion 18Fr", "0120-18-1.0 — sonda de alimentacion 18Fr", "0120-18-1.0 MUESTRA — sonda de alimentacion 18Fr", "0120-18-1.2 — sonda de alimentacion de Acceso gástrico", "0120-18-1.2 MUESTRA — sonda de alimentacion 18Fr", "0120-18-1.5 — sonda de alimentacion 18Fr"], "bodegas": ["B-001 Bodega Privado", "B-002 Bodega Publico", "B-003 Cardiología", "B-006 Bodega Rep.Bombas BBraun", "B-009 Bodega de Repuestos", "B-013 Bodega Ecatrans"], "transporte": ["AC (Aéreo Comercial)", "CO (Courier)", "LC (Local)", "MT (Maritimo)"], "sector": ["PRIVADO", "PUBLICO"]}};
+const COD = APPDATA.COD, ORD = APPDATA.ORD;
 
-/* ---------- Definición de columnas del formulario ---------- */
-/* type: text | textarea | number | list(listKey) | dependent(depends) */
-const SECTIONS = [
+/* ====================== CONFIGURACIÓN DE MÓDULOS ====================== */
+const MODULES = {
+  codigos: {
+    title:"Creación de Códigos de Artículo",
+    subtitle:"Listado de códigos de artículo creados",
+    addLabel:"Nuevo Registro",
+    gridCols:[
+      {k:"codigo",l:"Código",tag:true},{k:"nombre",l:"Nombre del Producto"},
+      {k:"departamento",l:"Departamento"},{k:"linea",l:"Línea"},{k:"familia",l:"Familia"},
+      {k:"proveedor",l:"Proveedor"},{k:"pais_origen",l:"País Origen"}
+    ],
+    sections:[
   {title:"Información de Producto", fields:[
     {key:"codigo", label:"Código de Producto", type:"text", req:true},
     {key:"nombre", label:"Nombre del Producto", type:"text", req:true},
@@ -298,277 +337,269 @@ const SECTIONS = [
     {key:"queda_paciente", label:"Se queda en el paciente", type:"list", list:"es_implantable"},
     {key:"materiales", label:"Materiales", type:"text"},
   ]},
-];
-const ALL_FIELDS = SECTIONS.flatMap(s=>s.fields);
-
-/* ---------- Listas editables (copias mutables) ---------- */
-const LISTS = {
-  departamentos: [...DATA.departamentos],
-  grupo_articulo: [...DATA.grupo_articulo],
-  centro_costo: [...DATA.centro_costo],
-  lote: [...DATA.lote],
-  unidades: [...DATA.unidades],
-  empaque: [...DATA.empaque],
-  proveedores: [...DATA.proveedores],
-  origen: [...DATA.origen],
-  tipo_implante: [...DATA.tipo_implante],
-  es_implantable: [...DATA.es_implantable],
+],
+    lists:{
+      departamentos:[...COD.departamentos], grupo_articulo:[...COD.grupo_articulo],
+      centro_costo:[...COD.centro_costo], lote:[...COD.lote], unidades:[...COD.unidades],
+      empaque:[...COD.empaque], proveedores:[...COD.proveedores], origen:[...COD.origen],
+      tipo_implante:[...COD.tipo_implante], es_implantable:[...COD.es_implantable]
+    },
+    hier:{
+      linea:{parent:"departamento", map:JSON.parse(JSON.stringify(COD.dept_lines))},
+      familia:{parent:"linea", map:JSON.parse(JSON.stringify(COD.familias))}
+    },
+    records:[], seq:1
+  },
+  ordenes: {
+    title:"Solicitud de Orden de Pedido",
+    subtitle:"Listado de solicitudes de orden de pedido",
+    addLabel:"Nueva Solicitud",
+    gridCols:[
+      {k:"codigo_producto",l:"Código",tag:true},{k:"descripcion",l:"Descripción"},
+      {k:"cajas",l:"Cajas"},{k:"total_unidades",l:"Total Unid."},
+      {k:"bodega",l:"Bodega"},{k:"proveedor",l:"Proveedor"},{k:"fecha_entrega",l:"Fecha entrega"}
+    ],
+    sections:[{title:"Solicitud de Orden de Pedido", fields:[
+      {key:"codigo_producto", label:"Código del Producto", type:"list", list:"productos", req:true},
+      {key:"descripcion", label:"Descripción del Producto", type:"text", req:true, full:true},
+      {key:"cajas", label:"Cajas", type:"number"},
+      {key:"unidades_caja", label:"Unidades x Caja", type:"number"},
+      {key:"total_unidades", label:"Total de Unidades", type:"number"},
+      {key:"bodega", label:"Bodega", type:"list", list:"bodegas"},
+      {key:"proveedor", label:"Proveedor", type:"list", list:"proveedores", req:true},
+      {key:"transporte", label:"Transporte", type:"list", list:"transporte"},
+      {key:"sector", label:"Sector", type:"list", list:"sector"},
+      {key:"fecha_entrega", label:"Fecha de entrega al cliente", type:"date"},
+      {key:"precio_especial", label:"Precio Especial", type:"number"},
+      {key:"num_emb", label:"Número de EMB", type:"text"},
+      {key:"fecha_venc_emb", label:"Fecha de Vencimiento de EMB", type:"date"},
+      {key:"observaciones", label:"Observaciones", type:"textarea", full:true}
+    ]}],
+    lists:{
+      productos:[...ORD.productos], bodegas:[...ORD.bodegas], proveedores:[...ORD.proveedores],
+      transporte:[...ORD.transporte], sector:[...ORD.sector]
+    },
+    hier:{},
+    records:[], seq:1
+  }
 };
-// Dependientes
-const DEPT_LINES = JSON.parse(JSON.stringify(DATA.dept_lines)); // dept -> [lineas]
-const FAMILIAS  = JSON.parse(JSON.stringify(DATA.familias));    // linea -> [familias]
 
-/* ---------- Estado ---------- */
-let records = [];
+/* etiqueta de cada lista para la pantalla de catálogos */
+const LIST_LABELS = {
+  departamentos:"Departamentos", grupo_articulo:"Grupo Artículo", centro_costo:"Centro de Costo",
+  lote:"¿Lleva Lote?", unidades:"Unidades", empaque:"Empaque", proveedores:"Proveedores",
+  origen:"País de Origen", tipo_implante:"Tipo Implante", es_implantable:"¿Es Implantable?",
+  productos:"Productos", bodegas:"Bodegas", transporte:"Transporte", sector:"Sector"
+};
+const MOD_LABELS = {codigos:"Creación de Códigos", ordenes:"Orden de Pedido"};
+
+/* ====================== ESTADO ====================== */
+let ACT = "codigos";
+function M(){ return MODULES[ACT]; }
+function allFields(){ return M().sections.flatMap(s=>s.fields); }
 let editingId = null;
-let seq = 1;
 
-/* ---------- LOGIN ---------- */
+/* ====================== LOGIN ====================== */
 function msLogin(){
-  const name = "María González";
-  document.getElementById('userName').textContent = name;
-  document.getElementById('userAvatar').textContent = name.split(' ').map(x=>x[0]).slice(0,2).join('');
+  const name="Usuario Dev";
+  document.getElementById('userName').textContent=name;
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  switchModule('codigos');
+}
+function setPerfil(btn,perfil){
+  document.querySelectorAll('.profile-toggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  toast("Perfil: "+perfil);
+}
+
+/* ====================== NAVEGACIÓN ====================== */
+function switchModule(id){
+  ACT=id; editingId=null;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const nav=document.getElementById('nav-'+id); if(nav) nav.classList.add('active');
+  document.getElementById('viewForm').classList.add('hidden');
+  document.getElementById('viewCatalogos').classList.add('hidden');
+  document.getElementById('viewGrid').classList.remove('hidden');
   renderMain();
 }
-function logout(){
-  document.getElementById('app').classList.add('hidden');
-  document.getElementById('login').classList.remove('hidden');
-}
+function showGrid(){ document.getElementById('viewForm').classList.add('hidden');
+  document.getElementById('viewCatalogos').classList.add('hidden');
+  document.getElementById('viewGrid').classList.remove('hidden'); }
+function showForm(){ document.getElementById('viewGrid').classList.add('hidden');
+  document.getElementById('viewCatalogos').classList.add('hidden');
+  document.getElementById('viewForm').classList.remove('hidden'); }
 
-/* ---------- (sin registros de demostración) ---------- */
-function seedDemo(){ /* vacío: proyecto nuevo inicia sin registros */ }
-
-/* ---------- Navegación ---------- */
-function showGrid(){ document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewGrid').classList.remove('hidden'); }
-function showForm(){ document.getElementById('viewGrid').classList.add('hidden'); document.getElementById('viewForm').classList.remove('hidden'); }
-
-/* ---------- GRID PRINCIPAL ---------- */
-function labelShort(v){ return v||"—"; }
+/* ====================== GRID PRINCIPAL ====================== */
 function renderMain(){
+  const m=M();
+  document.getElementById('pageTitle').textContent=m.title;
+  document.getElementById('pageSub').textContent=m.subtitle;
+  document.getElementById('addBtn').textContent="＋ "+m.addLabel;
+  document.getElementById('mainHead').innerHTML="<tr>"+m.gridCols.map(c=>`<th>${c.l}</th>`).join('')+'<th style="text-align:right">Acciones</th></tr>';
   const b=document.getElementById('mainBody'); b.innerHTML="";
-  document.getElementById('mainEmpty').classList.toggle('hidden', records.length>0);
-  document.getElementById('mainTable').classList.toggle('hidden', records.length===0);
-  records.forEach(r=>{
+  document.getElementById('mainEmpty').classList.toggle('hidden', m.records.length>0);
+  document.getElementById('mainTable').classList.toggle('hidden', m.records.length===0);
+  m.records.forEach(r=>{
+    const cells=m.gridCols.map(c=> c.tag? `<td><span class="tag">${esc(r[c.k])}</span></td>` : `<td>${esc(r[c.k])}</td>`).join('');
     const tr=document.createElement('tr');
-    tr.innerHTML = `
-      <td><span class="tag">${esc(r.codigo)}</span></td>
-      <td>${esc(r.nombre)}</td>
-      <td>${esc(r.departamento)}</td>
-      <td>${esc(r.linea)}</td>
-      <td>${esc(r.familia)}</td>
-      <td>${esc(r.proveedor)}</td>
-      <td>${esc(r.pais_origen)}</td>
-      <td><div class="actions-cell" style="justify-content:flex-end">
-        <button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>
-        <button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button>
-      </div></td>`;
+    tr.innerHTML=cells+`<td><div class="actions-cell" style="justify-content:flex-end">
+      <button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>
+      <button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button></div></td>`;
     b.appendChild(tr);
   });
 }
 
-/* ---------- FORMULARIO ---------- */
+/* ====================== FORMULARIO ====================== */
 function openForm(id){
-  editingId = id||null;
-  const rec = id ? records.find(r=>r.id===id) : {};
-  document.getElementById('formTitle').textContent = id? "Editar Registro" : "Nuevo Registro";
-  document.getElementById('formSaveBtn').textContent = id? "Actualizar" : "Guardar";
+  editingId=id||null;
+  const rec = id ? M().records.find(r=>r.id===id) : {};
+  document.getElementById('formTitle').textContent = id? "Editar Registro":"Nuevo Registro";
+  document.getElementById('formSaveBtn').textContent = id? "Actualizar":"Guardar";
   buildForm(rec||{});
   showForm();
 }
 function buildForm(rec){
   const c=document.getElementById('formFields'); c.innerHTML="";
-  SECTIONS.forEach(sec=>{
+  M().sections.forEach(sec=>{
     const st=document.createElement('div'); st.className="section-title"; st.textContent=sec.title; c.appendChild(st);
     sec.fields.forEach(f=>{
       const wrap=document.createElement('div'); wrap.className="field"+(f.full?" full":"");
-      const lbl=document.createElement('label');
-      lbl.innerHTML = f.label + (f.req?' <span class="req">*</span>':'');
-      wrap.appendChild(lbl);
-      const val = rec[f.key]!==undefined? rec[f.key]:"";
-      if(f.type==="list"){
-        wrap.appendChild(comboWithPlus(f, val));
-      } else if(f.type==="dependent"){
-        wrap.appendChild(dependentSelect(f, rec));
-      } else if(f.type==="textarea"){
-        const t=document.createElement('textarea'); t.rows=3; t.id="fld_"+f.key; t.value=val; wrap.appendChild(t);
-      } else {
-        const i=document.createElement('input');
-        i.type = f.type==="number"?"number": f.type==="date"?"date":"text";
-        i.id="fld_"+f.key; i.value=val; wrap.appendChild(i);
-      }
+      const lbl=document.createElement('label'); lbl.innerHTML=f.label+(f.req?' <span class="req">*</span>':''); wrap.appendChild(lbl);
+      const val = rec[f.key]!==undefined && rec[f.key]!==null ? rec[f.key]:"";
+      if(f.type==="list") wrap.appendChild(comboWithPlus(f,val));
+      else if(f.type==="dependent") wrap.appendChild(dependentSelect(f,rec));
+      else if(f.type==="textarea"){ const t=document.createElement('textarea');t.rows=3;t.id="fld_"+f.key;t.value=val;wrap.appendChild(t); }
+      else { const i=document.createElement('input'); i.type=f.type==="number"?"number":f.type==="date"?"date":"text"; i.id="fld_"+f.key; i.value=val; wrap.appendChild(i); }
       c.appendChild(wrap);
     });
   });
 }
-function comboWithPlus(f, val){
+function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
-  const sel=buildSelect("fld_"+f.key, LISTS[f.list], val);
-  const plus=document.createElement('button'); plus.className="btn-plus"; plus.textContent="＋";
-  plus.title="Gestionar opciones de "+f.label;
-  plus.type="button";
-  plus.onclick=()=>openOpt(f.list, f.label, "fld_"+f.key);
-  row.appendChild(sel); row.appendChild(plus);
-  return row;
+  const sel=buildSelect("fld_"+f.key, M().lists[f.list]||[], val);
+  const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
+  plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
+  row.appendChild(sel); row.appendChild(plus); return row;
 }
-function buildSelect(id, options, val){
+function buildSelect(id,options,val){
   const sel=document.createElement('select'); sel.id=id;
   const ph=document.createElement('option'); ph.value=""; ph.textContent="-- Seleccione --"; sel.appendChild(ph);
-  options.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
+  (options||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
   return sel;
 }
-/* Selects dependientes: Departamento -> Línea -> Familia */
-function dependentSelect(f, rec){
+function dependentSelect(f,rec){
   const row=document.createElement('div'); row.className="combo-row";
   const sel=document.createElement('select'); sel.id="fld_"+f.key;
+  const h=M().hier[f.key];
   const refresh=()=>{
-    let opts=[];
-    if(f.key==="linea"){
-      const dep=(document.getElementById('fld_departamento')||{}).value;
-      opts = dep && DEPT_LINES[dep] ? DEPT_LINES[dep] : [];
-    } else if(f.key==="familia"){
-      const lin=(document.getElementById('fld_linea')||{}).value;
-      opts = lin && FAMILIAS[lin] ? FAMILIAS[lin] : [];
-    }
+    const parentVal=(document.getElementById('fld_'+h.parent)||{}).value;
+    const opts = parentVal && h.map[parentVal] ? h.map[parentVal] : [];
     const cur=sel.value || rec[f.key] || "";
     sel.innerHTML="";
-    const ph=document.createElement('option');ph.value="";ph.textContent= opts.length? "-- Seleccione --":"(seleccione el nivel anterior)";sel.appendChild(ph);
+    const ph=document.createElement('option'); ph.value=""; ph.textContent= opts.length?"-- Seleccione --":"(seleccione el nivel anterior)"; sel.appendChild(ph);
     opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===cur)op.selected=true;sel.appendChild(op);});
   };
   sel._refresh=refresh;
-  // enganchar al padre
   setTimeout(()=>{
-    const parentId = f.dependsOn==="departamento"?"fld_departamento":"fld_linea";
-    const parent=document.getElementById(parentId);
-    if(parent){ parent.addEventListener('change', ()=>{ refresh(); // cascada
-        if(f.key==="linea"){const fam=document.getElementById('fld_familia'); if(fam&&fam._refresh)fam._refresh();}
-      });
-    }
+    const parent=document.getElementById('fld_'+h.parent);
+    if(parent) parent.addEventListener('change', ()=>{
+      refresh();
+      // refrescar hijos que dependan de este campo
+      Object.keys(M().hier).forEach(k=>{ if(M().hier[k].parent===f.key){ const ch=document.getElementById('fld_'+k); if(ch&&ch._refresh)ch._refresh(); } });
+    });
     refresh();
   },0);
   const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
-  plus.title="Gestionar opciones de "+f.label;
-  plus.onclick=()=>openDependentOpt(f);
-  row.appendChild(sel); row.appendChild(plus);
-  return row;
+  plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openDependentOpt(f);
+  row.appendChild(sel); row.appendChild(plus); return row;
 }
 
-/* ---------- Guardar registro ---------- */
+/* ====================== GUARDAR ====================== */
 function saveRecord(){
-  const rec = editingId ? {...records.find(r=>r.id===editingId)} : {id:seq++};
+  const m=M();
+  const rec = editingId ? {...m.records.find(r=>r.id===editingId)} : {id:m.seq++};
   const missing=[];
-  ALL_FIELDS.forEach(f=>{
+  allFields().forEach(f=>{
     const el=document.getElementById("fld_"+f.key);
     const v = el? el.value.trim():"";
     if(f.req && !v) missing.push(f.label);
     rec[f.key]=v;
   });
   if(missing.length){ toast("Complete los campos obligatorios: "+missing.join(", ")); return; }
-  if(editingId){
-    const i=records.findIndex(r=>r.id===editingId); records[i]=rec;
-    toast("Registro actualizado correctamente");
-  } else {
-    records.push(rec); toast("Registro creado correctamente");
-  }
+  if(editingId){ const i=m.records.findIndex(r=>r.id===editingId); m.records[i]=rec; toast("Registro actualizado correctamente"); }
+  else { m.records.push(rec); toast("Registro creado correctamente"); }
   editingId=null; renderMain(); showGrid();
 }
 
-/* ---------- Eliminar registro ---------- */
+/* ====================== ELIMINAR ====================== */
 let pendingDelete=null;
 function askDelete(id){
   pendingDelete=id;
-  const r=records.find(x=>x.id===id);
+  const r=M().records.find(x=>x.id===id);
+  const c=M().gridCols;
   document.getElementById('confirmText').textContent="¿Está seguro que desea eliminar el registro?";
-  document.getElementById('confirmRec').textContent = r? `${r.codigo} — ${r.nombre}`:"";
+  document.getElementById('confirmRec').textContent = r? (esc(r[c[0].k])+" — "+esc(r[c[1]?c[1].k:c[0].k])):"";
   document.getElementById('confirmModal').classList.remove('hidden');
 }
 function closeConfirm(){ pendingDelete=null; document.getElementById('confirmModal').classList.add('hidden'); }
 function confirmYes(){
-  if(pendingDelete!=null){ records=records.filter(r=>r.id!==pendingDelete); toast("Registro eliminado"); }
+  if(pendingDelete!=null){ M().records=M().records.filter(r=>r.id!==pendingDelete); toast("Registro eliminado"); }
   closeConfirm(); renderMain(); showGrid();
 }
 
-/* ============================================================
-   GESTIÓN DE OPCIONES DE LISTAS DESPLEGABLES
-   ============================================================ */
+/* ====================== GESTIÓN DE OPCIONES ====================== */
 let curListKey=null, curTargetSelect=null, curListLabel="";
-let curDependent=null; // {mode:'linea'|'familia', parentKey, parentVal}
+let curDependent=null; // {fieldKey, parentVal, map}
 
-function isListValueUsed(listKey, value){
-  // recorre registros y verifica si el valor está en uso en algún campo mapeado a esta lista
-  const fieldsUsing = ALL_FIELDS.filter(f=>f.list===listKey).map(f=>f.key);
-  return records.some(r=>fieldsUsing.some(k=>r[k]===value));
+function isListValueUsed(listKey,value){
+  const keys=allFields().filter(f=>f.list===listKey).map(f=>f.key);
+  return M().records.some(r=>keys.some(k=>r[k]===value));
 }
-function isDependentValueUsed(fieldKey, value){
-  return records.some(r=>r[fieldKey]===value);
-}
+function isDependentValueUsed(fieldKey,value){ return M().records.some(r=>r[fieldKey]===value); }
 
-/* --- Listas simples --- */
-function openOpt(listKey, label, targetSelectId){
+function openOpt(listKey,label,targetSelectId){
   curListKey=listKey; curListLabel=label; curTargetSelect=targetSelectId; curDependent=null;
   document.getElementById('optTitle').textContent="Opciones · "+label;
   document.getElementById('optHint').textContent="Listado de opciones disponibles para “"+label+"”";
-  renderOpt();
-  document.getElementById('optModal').classList.remove('hidden');
+  renderOpt(); document.getElementById('optModal').classList.remove('hidden');
 }
-/* --- Listas dependientes (línea/familia) --- */
 function openDependentOpt(f){
-  if(f.key==="linea"){
-    const dep=(document.getElementById('fld_departamento')||{}).value;
-    if(!dep){ toast("Seleccione primero un Departamento"); return; }
-    curDependent={mode:"linea", parentVal:dep, fieldKey:"linea"};
-    curListLabel="Línea de "+dep;
-  } else {
-    const lin=(document.getElementById('fld_linea')||{}).value;
-    if(!lin){ toast("Seleccione primero una Línea"); return; }
-    curDependent={mode:"familia", parentVal:lin, fieldKey:"familia"};
-    curListLabel="Familia de "+lin;
-  }
-  curListKey=null; curTargetSelect="fld_"+f.key;
+  const h=M().hier[f.key];
+  const parentVal=(document.getElementById('fld_'+h.parent)||{}).value;
+  if(!parentVal){ toast("Seleccione primero el nivel anterior"); return; }
+  curDependent={fieldKey:f.key, parentVal, map:h.map}; curListKey=null; curTargetSelect="fld_"+f.key;
+  curListLabel=f.label+" de "+parentVal;
   document.getElementById('optTitle').textContent="Opciones · "+f.label;
   document.getElementById('optHint').textContent="Listado de opciones disponibles para “"+curListLabel+"”";
-  renderOpt();
-  document.getElementById('optModal').classList.remove('hidden');
+  renderOpt(); document.getElementById('optModal').classList.remove('hidden');
 }
 function currentOptions(){
-  if(curDependent){
-    return curDependent.mode==="linea" ? (DEPT_LINES[curDependent.parentVal]||[]) : (FAMILIAS[curDependent.parentVal]||[]);
-  }
-  return LISTS[curListKey];
+  if(curDependent) return curDependent.map[curDependent.parentVal] || (curDependent.map[curDependent.parentVal]=[]);
+  return M().lists[curListKey];
 }
 function renderOpt(){
-  const opts=currentOptions();
-  const b=document.getElementById('optBody'); b.innerHTML="";
+  const opts=currentOptions(); const b=document.getElementById('optBody'); b.innerHTML="";
   if(!opts.length){ b.innerHTML=`<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:24px">Sin opciones. Use ＋ para agregar.</td></tr>`; return; }
   opts.forEach((o,idx)=>{
     const used = curDependent ? isDependentValueUsed(curDependent.fieldKey,o) : isListValueUsed(curListKey,o);
     const tr=document.createElement('tr');
-    tr.innerHTML=`
-      <td>${esc(o)} ${used?'<span class="used-note">🔒 en uso</span>':''}</td>
+    tr.innerHTML=`<td>${esc(o)} ${used?'<span class="used-note">🔒 en uso</span>':''}</td>
       <td style="text-align:right"><div class="actions-cell" style="justify-content:flex-end">
-        <button class="icon-btn edit-btn" title="Editar" onclick="editOption(${idx})">✏️</button>
-        ${used?'':`<button class="icon-btn del-btn" title="Eliminar" onclick="deleteOption(${idx})">🗑️</button>`}
-      </div></td>`;
+      <button class="icon-btn edit-btn" title="Editar" onclick="editOption(${idx})">✏️</button>
+      ${used?'':`<button class="icon-btn del-btn" title="Eliminar" onclick="deleteOption(${idx})">🗑️</button>`}</div></td>`;
     b.appendChild(tr);
   });
 }
-function closeOpt(){
-  document.getElementById('optModal').classList.add('hidden');
-  // refrescar el select objetivo
-  refreshTargetSelect();
-}
+function closeOpt(){ document.getElementById('optModal').classList.add('hidden'); refreshTargetSelect(); if(!document.getElementById('viewCatalogos').classList.contains('hidden')) renderCatalogos(); }
 function refreshTargetSelect(){
   if(!curTargetSelect) return;
-  const sel=document.getElementById(curTargetSelect);
-  if(!sel) return;
+  const sel=document.getElementById(curTargetSelect); if(!sel) return;
   if(sel._refresh){ sel._refresh(); return; }
   const val=sel.value, opts=currentOptions();
   sel.innerHTML='<option value="">-- Seleccione --</option>';
-  opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
+  (opts||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
 }
-
-/* --- Agregar / editar opción --- */
 let editOptIdx=null;
 function addOptionRow(){ editOptIdx=null; document.getElementById('optEditTitle').textContent="Nueva Opción";
   document.getElementById('optEditInput').value=""; document.getElementById('optEditModal').classList.remove('hidden');
@@ -585,56 +616,60 @@ function saveOption(){
     if(opts.includes(v)){ toast("Esa opción ya existe"); return; }
     opts.push(v); toast("Opción agregada");
   } else {
-    const old=opts[editOptIdx];
-    opts[editOptIdx]=v;
-    // propagar cambio a registros existentes
-    if(curDependent){
-      records.forEach(r=>{ if(r[curDependent.fieldKey]===old) r[curDependent.fieldKey]=v; });
-    } else {
-      const fk=ALL_FIELDS.filter(f=>f.list===curListKey).map(f=>f.key);
-      records.forEach(r=>fk.forEach(k=>{ if(r[k]===old) r[k]=v; }));
-    }
+    const old=opts[editOptIdx]; opts[editOptIdx]=v;
+    if(curDependent){ M().records.forEach(r=>{ if(r[curDependent.fieldKey]===old) r[curDependent.fieldKey]=v; }); }
+    else { const fk=allFields().filter(f=>f.list===curListKey).map(f=>f.key); M().records.forEach(r=>fk.forEach(k=>{ if(r[k]===old) r[k]=v; })); }
     toast("Opción actualizada");
   }
   closeOptEdit(); renderOpt(); renderMain();
 }
-function deleteOption(idx){
-  const opts=currentOptions();
-  opts.splice(idx,1);
-  toast("Opción eliminada"); renderOpt();
-}
+function deleteOption(idx){ currentOptions().splice(idx,1); toast("Opción eliminada"); renderOpt(); }
 
-/* ---------- Exportar a Excel ---------- */
+/* ====================== PANTALLA DE CATÁLOGOS ====================== */
+function showCatalogos(){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('nav-catalogos').classList.add('active');
+  document.getElementById('viewGrid').classList.add('hidden');
+  document.getElementById('viewForm').classList.add('hidden');
+  document.getElementById('viewCatalogos').classList.remove('hidden');
+  renderCatalogos();
+}
+function renderCatalogos(){
+  const b=document.getElementById('catBody'); b.innerHTML="";
+  Object.keys(MODULES).forEach(modId=>{
+    const lists=MODULES[modId].lists;
+    Object.keys(lists).forEach(key=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td><span class="tag">${MOD_LABELS[modId]}</span></td>
+        <td>${LIST_LABELS[key]||key}</td>
+        <td>${lists[key].length} opción(es)</td>
+        <td><div class="cat-actions"><button class="btn-ghost" onclick="manageCat('${modId}','${key}')">Gestionar</button></div></td>`;
+      b.appendChild(tr);
+    });
+  });
+}
+function manageCat(modId,key){ ACT=modId; openOpt(key, LIST_LABELS[key]||key, null); }
+
+/* ====================== EXPORTAR A EXCEL ====================== */
 function exportExcel(){
-  if(!records.length){ toast("No hay registros para exportar"); return; }
+  const m=M();
+  if(!m.records.length){ toast("No hay registros para exportar"); return; }
   if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); return; }
-  const headers = ALL_FIELDS.map(f=>f.label);
-  const rows = records.map(r=>{
-    const o={};
-    ALL_FIELDS.forEach(f=>{ o[f.label] = (r[f.key]===undefined||r[f.key]===null)?"":r[f.key]; });
-    return o;
-  });
-  const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
-  ws['!cols'] = headers.map(h=>{
-    let max=h.length;
-    rows.forEach(r=>{ const v=String(r[h]||""); if(v.length>max)max=v.length; });
-    return {wch:Math.min(Math.max(max+2,12),55)};
-  });
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Registros");
-  const fecha = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `Solicitud_Creacion_Codigos_${fecha}.xlsx`);
-  toast("Excel descargado ("+records.length+" registro(s))");
+  const fields=allFields(); const headers=fields.map(f=>f.label);
+  const rows=m.records.map(r=>{ const o={}; fields.forEach(f=>{ o[f.label]=(r[f.key]==null)?"":r[f.key]; }); return o; });
+  const ws=XLSX.utils.json_to_sheet(rows,{header:headers});
+  ws['!cols']=headers.map(h=>{ let mx=h.length; rows.forEach(r=>{const v=String(r[h]||"");if(v.length>mx)mx=v.length;}); return {wch:Math.min(Math.max(mx+2,12),55)}; });
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Registros");
+  XLSX.writeFile(wb, `${m.title.replace(/[^A-Za-z0-9]+/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast("Excel descargado ("+rows.length+" registro(s))");
 }
 
-/* ---------- util ---------- */
+/* ====================== UTILIDADES ====================== */
 function esc(s){ if(s===undefined||s===null||s==="")return "—"; return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 let toastT;
 function toast(msg){ let t=document.querySelector('.toast'); if(t)t.remove();
   t=document.createElement('div'); t.className="toast"; t.textContent=msg; document.body.appendChild(t);
   clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),2600); }
-
-// Enter en modal de opción
 document.getElementById('optEditInput').addEventListener('keydown',e=>{if(e.key==='Enter')saveOption();});
 </script>
 </body>
