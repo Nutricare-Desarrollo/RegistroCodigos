@@ -248,10 +248,9 @@ tbody tr:last-child td{border-bottom:none}
 </div>
 
 <script>
-const DATA = {"departamentos": ["CO.CB._CUIDADO_Y_BIENESTAR", "CO.DT._DIAGNOSTICO_Y_TECNOLOGIAS_DE_SOPORTE", "CO.EQ._ESPECIALIDADES_QUIRÚRGICAS", "CO.SC._SALUD_CARDIOVASCULAR", "CO.ST._SERVICIO_TÉCNICO", "CO.TE._TERAPIAS_ESPECIALIZADAS"], "dept_lines": {"CO.CB._CUIDADO_Y_BIENESTAR": ["CO.CB.1._HERIDAS", "CO.CB.2._NUTRICIÓN", "CO.CB.3._MUESTRAS"], "CO.DT._DIAGNOSTICO_Y_TECNOLOGIAS_DE_SOPORTE": ["CO.DT.1._TERAPIAS_QUIRURGICAS", "CO.DT.2._MUESTRAS"], "CO.EQ._ESPECIALIDADES_QUIRÚRGICAS": ["CO.EQ.1._CUIDADO_HOSPITALARIO", "CO.EQ.2._TERAPIAS_QUIRURGICAS", "CO.EQ.3._ORTOPEDÍA", "CO.EQ.4._MUESTRA"], "CO.SC._SALUD_CARDIOVASCULAR": ["CO.SC.1._CARDIOLOGÍA_INTERVENCIONISTA", "CO.SC.2._ESTRUCTURAL", "CO.SC.3._NEUROVASCULAR", "CO.SC.4._VASCULAR_PERIFERICO", "CO.SC.5._MUESTRAS"], "CO.ST._SERVICIO_TÉCNICO": ["CO.ST.1._HERRAMIENTA", "CO.ST.2._REPUESTOS", "CO.ST.3._SERVICIOS"], "CO.TE._TERAPIAS_ESPECIALIZADAS": ["CO.TE.1._CUIDADO_CRÍTICO", "CO.TE.2._CUIDADO_CRÓNICO", "CO.TE.3._MUESTRA"]}, "familias": {"CO.CB.1._HERIDAS": ["CO.CB.1.1. PIE DIABETICO", "CO.CB.1.2. CUIDADO DE LA PIEL"], "CO.CB.2._NUTRICIÓN": ["CO.CB.2.1. DIABETES", "CO.CB.2.2. ESPECIALIZADA", "CO.CB.2.3. GENERAL", "CO.CB.2.4. PEDIATRICA"], "CO.CB.3._MUESTRAS": ["CO.CB.3.1. HERIDAS", "CO.CB.3.2. DISPOSITIVOS Y EQUIPOS NUTRICIONALES", "CO.CB.3.3. NUTRICIÓN"], "CO.DT.1._TERAPIAS_QUIRURGICAS": ["CO.DT.1.1. SOPORTE QUIRURGICO", "CO.DT.1.2. GINECOLOGIA (EQUIPOS)"], "CO.DT.2._MUESTRAS": ["CO.DT.2.1. TERAPIAS QUIRURGICA", "CO.DT.2.2. MUESTRA"], "CO.EQ.1._CUIDADO_HOSPITALARIO": ["CO.EQ.1.1. ANESTESIA", "CO.EQ.1.2. BOMBA INFUSION"], "CO.EQ.2._TERAPIAS_QUIRURGICAS": ["CO.EQ.2.1. GINECOLOGIA", "CO.EQ.2.2. UROLOGIA", "CO.EQ.2.3. ENDOSCOPÍA", "CO.EQ.2.4. INSTRUMENTAL DE CIRUGIA ABIERTA", "CO.EQ.2.5. LAPAROSCOPIA", "CO.EQ.2.6. TECNOLOGÍA DE CIERRE", "CO.EQ.2.7. MOTORES DE CIRUGIA", "CO.EQ.2.8. GASTROSTOMIA", "CO.EQ.2.9. SOPORTE QUIRURGICO"], "CO.EQ.3._ORTOPEDÍA": ["CO.EQ.3.1. MOTORES", "CO.EQ.3.10. TORNILLOS", "CO.EQ.3.2. TRAUMA", "CO.EQ.3.3. ORTOPEDÍA", "CO.EQ.3.4. FIJACIÓN TEMPORAL", "CO.EQ.3.5. INSTRUMENTAL TRAUMA", "CO.EQ.3.6. MINI FRAGMENTOS", "CO.EQ.3.7. PEQUEÑOS FRAGMENTOS", "CO.EQ.3.8. SIERRAS", "CO.EQ.3.9. GRANDES FRAGMENTOS"], "CO.EQ.4._MUESTRA": ["CO.EQ.4.1. TERAPIAS QUIRURGICA", "CO.EQ.4.4. ANESTESIA"], "CO.SC.1._CARDIOLOGÍA_INTERVENCIONISTA": ["CO.SC.1.1. ACCESORIOS PARA PROCEDIMIENTOS CARDIOVASCULARES", "CO.SC.1.2. GUIAS CORONARIAS", "CO.SC.1.3. STENTS CORONARIOS", "CO.SC.1.4. BALONES CORONARIOS"], "CO.SC.2._ESTRUCTURAL": ["CO.SC.2.1. TAVI", "CO.SC.2.2. VALVULAS BIOLOGICAS", "CO.SC.2.3. ANILLOS", "CO.SC.2.4. MITRACLIP", "CO.SC.2.5. AMPLATZER", "CO.SC.2.6. VALVULAS MECANICAS", "CO.SC.2.7. PARCHES DE PERICARDIO"], "CO.SC.3._NEUROVASCULAR": ["CO.SC.3.1. DISPOSITIVOS PARA EMBOLIZACION", "CO.SC.3.2. STENTS NEUROVASCULAR", "CO.SC.3.3. MICROCATETER", "CO.SC.3.4. DISPOSITIVOS PARA REMODELAMIENTO", "CO.SC.3.5. MICROGUÍAS"], "CO.SC.4._VASCULAR_PERIFERICO": ["CO.SC.4.1. STENTS PERIFERICOS", "CO.SC.4.2. ACCESORIOS VASCULAR PERIFERICO", "CO.SC.4.3. BALONES PERIFERICOS", "CO.SC.4.4. DISPOSITIVOS PARA PROTECCION DISTAL Y PROXIMAL", "CO.SC.4.5. GUIAS PERIFERICAS"], "CO.SC.5._MUESTRAS": ["CO.SC.5.1. ESTRUCTURAL", "CO.SC.5.2. CARDIOLOGÍA INTERVENCIONISTA", "CO.SC.5.3. NEUROVASCULAR", "CO.SC.5.5. MUESTRA", "CO.SC.5.6. TAVI"], "CO.ST.1._HERRAMIENTA": ["CO.ST.1.1. HERRAMIENTA USO GENERAL"], "CO.ST.2._REPUESTOS": ["CO.ST.2.1. BOMBA INFUSION", "CO.ST.2.10. LAMPARAS", "CO.ST.2.11. BILIRRUBINÓMETRO", "CO.ST.2.12. VENTILACION MECANICA", "CO.ST.2.13. HEMOFILTRADOR", "CO.ST.2.14. PERITONEAL", "CO.ST.2.15. ESTRUCTURAL", "CO.ST.2.16. LLENADORA PINNACLE", "CO.ST.2.17. ACCESORIOS PARA VENTILACION MECANICA", "CO.ST.2.18. UROLOGIA", "CO.ST.2.19. FOTOTERAPIA", "CO.ST.2.2. HEMODIALISIS", "CO.ST.2.20. DERMATOMO", "CO.ST.2.22. SISTEMAS TRATAMIENTO DE AGUA", "CO.ST.2.3. MONITORES", "CO.ST.2.4. OSMOSIS INVERSA", "CO.ST.2.5. MESAS QUIRURGICAS", "CO.ST.2.6. SILLA GINECOLOGICAS", "CO.ST.2.7. ANESTESIA", "CO.ST.2.8. INCUBADORAS", "CO.ST.2.9. INFRAESTRUCTURA", "CO.ST.2.21. INCUBADORAS"], "CO.ST.3._SERVICIOS": ["CO.ST.3.1. MANO DE OBRA"], "CO.TE.1._CUIDADO_CRÍTICO": ["CO.TE.1.1. HIGIENE BRONQUIAL", "CO.TE.1.10. EXPANSION PULMONAR", "CO.TE.1.11. TERAPIAS INTRAVENOSAS", "CO.TE.1.12. NUTRICIÓN PARENTERAL Y CONTROL DE LA VOLEMIA", "CO.TE.1.13. CATETER DE DREANJE PLEURAL", "CO.TE.1.14. ACCESORIOS PARA NUTRICION ENTERAL", "CO.TE.1.15. ANESTESIA", "CO.TE.1.16. CUIDADO RESPIRATORIO", "CO.TE.1.2. MONITOREO", "CO.TE.1.3. VENTILACION MECANICA", "CO.TE.1.4. LABORATORIO CLÍNICO", "CO.TE.1.5. CUIDADO NEONATAL", "CO.TE.1.6. TRRC", "CO.TE.1.7. BIOSEGURIDAD", "CO.TE.1.8. BOMBA INFUSION", "CO.TE.1.9. SUPLEMENTOS DE VÍA AEREA"], "CO.TE.2._CUIDADO_CRÓNICO": ["CO.TE.2.1. HEMODIALISIS", "CO.TE.2.2. HEMATO-ONCOLOGÍA Y CUIDADO PALIATIVO", "CO.TE.2.3. PERITONEAL"], "CO.TE.3._MUESTRA": ["CO.TE.3.1. CUIDADO CRÍTICO", "CO.TE.3.2. CUIDADO CRÓNICO"]}, "lote": ["Si", "No"], "empaque": ["Unidad", "Caja", "Bolsa"], "origen": ["CAN - Canadá", "CHN - China", "COL - Colombia", "CRI - Costa Rica", "SLV - El Salvador", "FRA - Francia", "DEU - Alemania", "GTM - Guatemala", "HND - Honduras", "ITA - Italia", "JPN - Japón", "MEX - México", "NLD - Países Bajos", "NIC - Nicaragua", "PAN - Panamá", "PER - Perú", "ESP - España", "TWN - Taiwán", "GBR - Reino Unido", "USA - Estados Unidos"], "grupo_articulo": ["Cuidado Critico", "Cuidado Crónico", "Terapias Quirúrgicas", "Ortopédia", "Salud Cardiovascular", "Cuidado y Bienestar", "Diagnóstico y Tecnologías de Soporte", "Servicio Técnico"], "centro_costo": ["20-2001-200102", "20-2001-200103", "20-2002-200202", "20-2002-200203", "20-2003-200301", "20-2004-200404", "20-2005-200502", "20-2005-200503"], "proveedores": ["00001 - ABBOTT VASCULAR", "00006 - FRESENIUS MEDICAL CARE", "00007 - INTRA SPECIAL CATHETERS", "00009 - VICTUS", "00010 - TORAY MARKETING AND SALES AMERICA INC", "00012 - SMITHS MEDICAL INTERNATIONAL LTD", "00013 - SUPPORT ADVANCED MEDICAL NUTRITION", "00014 - DRAGERWERK AG & CO KGAA", "00015 - ABBOT VASCULAR DEVICES HOLAND", "00023 - CORPORACIÓN BIOMUR S A", "00065 - MCMILLAN COMPANY INC", "00075 - HANNA INSTRUMENTS COSTA RICA SOCIEDAD ANONIMA", "00098 - D.A. MEDICA DE COSTA RICA S.A.", "00152 - CYTOSORBENTS EUROPE GMBH", "00153 - B BRAUN SURGICAL S A ( BARCELONA )", "00169 - FRESENIUS MEDICAL CARE PANAMA", "00210 - AESCULAP AG", "00236 - APEX MEDICAL", "00353 - B.BRAUN MEDICAL DE MEXICO S.A.P.I  DE C.V.", "00357 - AQUAPURA S A", "00369 - ELVATRON S A", "00372 - FRESENIUS ANDINA S A S", "00398 - MERIT MEDICAL", "00413 - B BRAUN MEDICAL INC", "00415 - GERARD O ELSNER LTDA", "00426 - ORION INTERMED S J D M S A", "00441 - B BRAUN MELSUNGEN AG", "00446 - B BRAUN MEDICAL CENTRAL AMERICA & CARIBE S A", "00449 - CAPRIS", "00465 - SCHMITZ U SOHNE GMBH & CO KG", "00503 - BOSTON SCIENTIFIC INTERNATIONAL BV", "00505 - MEDTRONIC LOGISTICS LLC", "00516 - B BRAUN MEDICAL PERU S A", "00521 - PRAXAIR COSTA RICA S.A.", "00541 - NEOMEDIC INTERNATIONAL", "00549 - PROVEEDORES ONLINE", "00554 - SUPLI SERVICIOS S A", "00557 - MEDITEK SERVICES SOCIEDAD ANONIMA", "00565 - OPTIMA MOLLITER SRL", "00646 - ST JUDE (ABBOTT LABORATORIES)", "00715 - BSN MEDICAL DC S.A. DE C.V", "00748 - YIRE MEDICA H P SOCIEDAD ANONIMA", "00757 - Advance Laboratorios S.A", "00779 - Medtronic-Kanghui", "00872 - DORNIER MEDTECH AMERICA INC", "00881 - DRAEGER COLOMBIA S.A", "00889 - ROMANAS OCONY S.A.", "00890 - KAMS INDUSTRIAL, S.A.", "00933 - AVANOS", "00961 - CHARDER ELECTRONIC CO., LTD", "00986 - CLINARIS GMBH"], "tipo_implante": ["Permanente", "Temporal", "No", "Por definir"], "unidades": ["Unidad", "Caja", "Bolsa", "Paquete", "Kit", "Frasco", "Ampolla", "Rollo"], "es_implantable": ["Si", "No"]};
-
-/* ---------- Definición de columnas del formulario ---------- */
-/* type: text | textarea | number | list(listKey) | dependent(depends) */
+/* ============================================================
+   Configuración de secciones/campos del formulario (igual que antes)
+   ============================================================ */
 const SECTIONS = [
   {title:"Información de Producto", fields:[
     {key:"codigo", label:"Código de Producto", type:"text", req:true},
@@ -301,51 +300,82 @@ const SECTIONS = [
 ];
 const ALL_FIELDS = SECTIONS.flatMap(s=>s.fields);
 
-/* ---------- Listas editables (copias mutables) ---------- */
-const LISTS = {
-  departamentos: [...DATA.departamentos],
-  grupo_articulo: [...DATA.grupo_articulo],
-  centro_costo: [...DATA.centro_costo],
-  lote: [...DATA.lote],
-  unidades: [...DATA.unidades],
-  empaque: [...DATA.empaque],
-  proveedores: [...DATA.proveedores],
-  origen: [...DATA.origen],
-  tipo_implante: [...DATA.tipo_implante],
-  es_implantable: [...DATA.es_implantable],
-};
-// Dependientes
-const DEPT_LINES = JSON.parse(JSON.stringify(DATA.dept_lines)); // dept -> [lineas]
-const FAMILIAS  = JSON.parse(JSON.stringify(DATA.familias));    // linea -> [familias]
+/* Catálogos: se llenan desde la API */
+let LISTS = {};        // { departamentos:[], grupo_articulo:[], ... }
+let DEPT_LINES = {};   // departamento -> [lineas]
+let FAMILIAS = {};     // linea -> [familias]
 
-/* ---------- Estado ---------- */
+/* Qué campos usan cada catálogo (para editar/agregar opciones) */
+const LIST_KEYS = ["departamentos","grupo_articulo","centro_costo","lote","unidades",
+                   "empaque","proveedores","origen","tipo_implante","es_implantable"];
+
+/* Estado */
 let records = [];
 let editingId = null;
-let seq = 1;
 
-/* ---------- LOGIN ---------- */
-function msLogin(){
-  const name = "María González";
+/* ============================================================
+   Cliente HTTP hacia la API
+   ============================================================ */
+async function api(method, path, body){
+  const opt = {method, headers:{}};
+  if(body!==undefined){ opt.headers['Content-Type']='application/json'; opt.body=JSON.stringify(body); }
+  const res = await fetch('/api'+path, opt);
+  let data=null; try{ data=await res.json(); }catch{}
+  if(!res.ok){ const msg=(data&&(data.error||data.detail))||('Error '+res.status); throw new Error(msg); }
+  return data;
+}
+
+/* ============================================================
+   Autenticación (SSO Microsoft vía Static Web Apps)
+   ============================================================ */
+async function init(){
+  try{
+    const user = await api('GET','/me');
+    showUser(user);
+    document.getElementById('login').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    await loadCatalogs();
+    await loadRecords();
+    renderMain();
+  }catch(e){
+    // 401 -> mostrar pantalla de login
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('login').classList.remove('hidden');
+  }
+}
+function showUser(user){
+  const name = (user && user.name) ? user.name : 'Usuario';
   document.getElementById('userName').textContent = name;
-  document.getElementById('userAvatar').textContent = name.split(' ').map(x=>x[0]).slice(0,2).join('');
-  document.getElementById('login').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
-  renderMain();
+  document.getElementById('userAvatar').textContent =
+    name.replace(/[^A-Za-zÁÉÍÓÚÑ ]/g,'').trim().split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase() || 'U';
 }
-function logout(){
-  document.getElementById('app').classList.add('hidden');
-  document.getElementById('login').classList.remove('hidden');
+function msLogin(){ window.location.href = '/.auth/login/aad?post_login_redirect_uri=/'; }
+function logout(){ window.location.href = '/.auth/logout?post_logout_redirect_uri=/'; }
+
+/* ============================================================
+   Cargar datos desde la API
+   ============================================================ */
+async function loadCatalogs(){
+  const c = await api('GET','/catalogos');
+  LISTS = {
+    departamentos:c.departamentos, grupo_articulo:c.grupo_articulo, centro_costo:c.centro_costo,
+    lote:c.lote, unidades:c.unidades, empaque:c.empaque, proveedores:c.proveedores,
+    origen:c.origen, tipo_implante:c.tipo_implante, es_implantable:c.es_implantable
+  };
+  DEPT_LINES = c.dept_lines || {};
+  FAMILIAS   = c.familias || {};
 }
+async function loadRecords(){ records = await api('GET','/solicitudes'); }
 
-/* ---------- (sin registros de demostración) ---------- */
-function seedDemo(){ /* vacío: proyecto nuevo inicia sin registros */ }
-
-/* ---------- Navegación ---------- */
+/* ============================================================
+   Navegación
+   ============================================================ */
 function showGrid(){ document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewGrid').classList.remove('hidden'); }
 function showForm(){ document.getElementById('viewGrid').classList.add('hidden'); document.getElementById('viewForm').classList.remove('hidden'); }
 
-/* ---------- GRID PRINCIPAL ---------- */
-function labelShort(v){ return v||"—"; }
+/* ============================================================
+   GRID PRINCIPAL
+   ============================================================ */
 function renderMain(){
   const b=document.getElementById('mainBody'); b.innerHTML="";
   document.getElementById('mainEmpty').classList.toggle('hidden', records.length>0);
@@ -368,10 +398,16 @@ function renderMain(){
   });
 }
 
-/* ---------- FORMULARIO ---------- */
-function openForm(id){
+/* ============================================================
+   FORMULARIO
+   ============================================================ */
+async function openForm(id){
   editingId = id||null;
-  const rec = id ? records.find(r=>r.id===id) : {};
+  let rec = {};
+  if(id){
+    try{ rec = await api('GET','/solicitudes/'+id); }
+    catch(e){ toast('No se pudo cargar el registro: '+e.message); return; }
+  }
   document.getElementById('formTitle').textContent = id? "Editar Registro" : "Nuevo Registro";
   document.getElementById('formSaveBtn').textContent = id? "Actualizar" : "Guardar";
   buildForm(rec||{});
@@ -386,7 +422,7 @@ function buildForm(rec){
       const lbl=document.createElement('label');
       lbl.innerHTML = f.label + (f.req?' <span class="req">*</span>':'');
       wrap.appendChild(lbl);
-      const val = rec[f.key]!==undefined? rec[f.key]:"";
+      const val = rec[f.key]!==undefined && rec[f.key]!==null ? rec[f.key] : "";
       if(f.type==="list"){
         wrap.appendChild(comboWithPlus(f, val));
       } else if(f.type==="dependent"){
@@ -404,10 +440,9 @@ function buildForm(rec){
 }
 function comboWithPlus(f, val){
   const row=document.createElement('div'); row.className="combo-row";
-  const sel=buildSelect("fld_"+f.key, LISTS[f.list], val);
+  const sel=buildSelect("fld_"+f.key, LISTS[f.list]||[], val);
   const plus=document.createElement('button'); plus.className="btn-plus"; plus.textContent="＋";
-  plus.title="Gestionar opciones de "+f.label;
-  plus.type="button";
+  plus.title="Gestionar opciones de "+f.label; plus.type="button";
   plus.onclick=()=>openOpt(f.list, f.label, "fld_"+f.key);
   row.appendChild(sel); row.appendChild(plus);
   return row;
@@ -415,10 +450,9 @@ function comboWithPlus(f, val){
 function buildSelect(id, options, val){
   const sel=document.createElement('select'); sel.id=id;
   const ph=document.createElement('option'); ph.value=""; ph.textContent="-- Seleccione --"; sel.appendChild(ph);
-  options.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
+  (options||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
   return sel;
 }
-/* Selects dependientes: Departamento -> Línea -> Familia */
 function dependentSelect(f, rec){
   const row=document.createElement('div'); row.className="combo-row";
   const sel=document.createElement('select'); sel.id="fld_"+f.key;
@@ -437,14 +471,12 @@ function dependentSelect(f, rec){
     opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===cur)op.selected=true;sel.appendChild(op);});
   };
   sel._refresh=refresh;
-  // enganchar al padre
   setTimeout(()=>{
     const parentId = f.dependsOn==="departamento"?"fld_departamento":"fld_linea";
     const parent=document.getElementById(parentId);
-    if(parent){ parent.addEventListener('change', ()=>{ refresh(); // cascada
+    if(parent){ parent.addEventListener('change', ()=>{ refresh();
         if(f.key==="linea"){const fam=document.getElementById('fld_familia'); if(fam&&fam._refresh)fam._refresh();}
-      });
-    }
+      }); }
     refresh();
   },0);
   const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
@@ -454,9 +486,11 @@ function dependentSelect(f, rec){
   return row;
 }
 
-/* ---------- Guardar registro ---------- */
-function saveRecord(){
-  const rec = editingId ? {...records.find(r=>r.id===editingId)} : {id:seq++};
+/* ============================================================
+   Guardar registro (crea o actualiza vía API)
+   ============================================================ */
+async function saveRecord(){
+  const rec = {};
   const missing=[];
   ALL_FIELDS.forEach(f=>{
     const el=document.getElementById("fld_"+f.key);
@@ -465,16 +499,19 @@ function saveRecord(){
     rec[f.key]=v;
   });
   if(missing.length){ toast("Complete los campos obligatorios: "+missing.join(", ")); return; }
-  if(editingId){
-    const i=records.findIndex(r=>r.id===editingId); records[i]=rec;
-    toast("Registro actualizado correctamente");
-  } else {
-    records.push(rec); toast("Registro creado correctamente");
-  }
-  editingId=null; renderMain(); showGrid();
+  const btn=document.getElementById('formSaveBtn'); btn.disabled=true;
+  try{
+    if(editingId){ await api('PUT','/solicitudes/'+editingId, rec); toast("Registro actualizado correctamente"); }
+    else{ await api('POST','/solicitudes', rec); toast("Registro creado correctamente"); }
+    editingId=null;
+    await loadRecords(); renderMain(); showGrid();
+  }catch(e){ toast("Error al guardar: "+e.message); }
+  finally{ btn.disabled=false; }
 }
 
-/* ---------- Eliminar registro ---------- */
+/* ============================================================
+   Eliminar registro
+   ============================================================ */
 let pendingDelete=null;
 function askDelete(id){
   pendingDelete=id;
@@ -484,27 +521,20 @@ function askDelete(id){
   document.getElementById('confirmModal').classList.remove('hidden');
 }
 function closeConfirm(){ pendingDelete=null; document.getElementById('confirmModal').classList.add('hidden'); }
-function confirmYes(){
-  if(pendingDelete!=null){ records=records.filter(r=>r.id!==pendingDelete); toast("Registro eliminado"); }
+async function confirmYes(){
+  if(pendingDelete!=null){
+    try{ await api('DELETE','/solicitudes/'+pendingDelete); toast("Registro eliminado"); await loadRecords(); }
+    catch(e){ toast("Error al eliminar: "+e.message); }
+  }
   closeConfirm(); renderMain(); showGrid();
 }
 
 /* ============================================================
-   GESTIÓN DE OPCIONES DE LISTAS DESPLEGABLES
+   GESTIÓN DE OPCIONES DE LISTAS (contra la API)
    ============================================================ */
 let curListKey=null, curTargetSelect=null, curListLabel="";
-let curDependent=null; // {mode:'linea'|'familia', parentKey, parentVal}
+let curDependent=null; // {mode:'linea'|'familia', parentVal, parentDept, fieldKey}
 
-function isListValueUsed(listKey, value){
-  // recorre registros y verifica si el valor está en uso en algún campo mapeado a esta lista
-  const fieldsUsing = ALL_FIELDS.filter(f=>f.list===listKey).map(f=>f.key);
-  return records.some(r=>fieldsUsing.some(k=>r[k]===value));
-}
-function isDependentValueUsed(fieldKey, value){
-  return records.some(r=>r[fieldKey]===value);
-}
-
-/* --- Listas simples --- */
 function openOpt(listKey, label, targetSelectId){
   curListKey=listKey; curListLabel=label; curTargetSelect=targetSelectId; curDependent=null;
   document.getElementById('optTitle').textContent="Opciones · "+label;
@@ -512,7 +542,6 @@ function openOpt(listKey, label, targetSelectId){
   renderOpt();
   document.getElementById('optModal').classList.remove('hidden');
 }
-/* --- Listas dependientes (línea/familia) --- */
 function openDependentOpt(f){
   if(f.key==="linea"){
     const dep=(document.getElementById('fld_departamento')||{}).value;
@@ -520,9 +549,10 @@ function openDependentOpt(f){
     curDependent={mode:"linea", parentVal:dep, fieldKey:"linea"};
     curListLabel="Línea de "+dep;
   } else {
+    const dep=(document.getElementById('fld_departamento')||{}).value;
     const lin=(document.getElementById('fld_linea')||{}).value;
     if(!lin){ toast("Seleccione primero una Línea"); return; }
-    curDependent={mode:"familia", parentVal:lin, fieldKey:"familia"};
+    curDependent={mode:"familia", parentVal:lin, parentDept:dep, fieldKey:"familia"};
     curListLabel="Familia de "+lin;
   }
   curListKey=null; curTargetSelect="fld_"+f.key;
@@ -535,27 +565,31 @@ function currentOptions(){
   if(curDependent){
     return curDependent.mode==="linea" ? (DEPT_LINES[curDependent.parentVal]||[]) : (FAMILIAS[curDependent.parentVal]||[]);
   }
-  return LISTS[curListKey];
+  return LISTS[curListKey]||[];
+}
+/* endpoint 'tipo' que espera la API para el catálogo actual */
+function currentTipo(){
+  if(curDependent) return curDependent.mode==="linea" ? "lineas" : "familias";
+  return curListKey;
 }
 function renderOpt(){
   const opts=currentOptions();
   const b=document.getElementById('optBody'); b.innerHTML="";
   if(!opts.length){ b.innerHTML=`<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:24px">Sin opciones. Use ＋ para agregar.</td></tr>`; return; }
   opts.forEach((o,idx)=>{
-    const used = curDependent ? isDependentValueUsed(curDependent.fieldKey,o) : isListValueUsed(curListKey,o);
     const tr=document.createElement('tr');
     tr.innerHTML=`
-      <td>${esc(o)} ${used?'<span class="used-note">🔒 en uso</span>':''}</td>
+      <td>${esc(o)}</td>
       <td style="text-align:right"><div class="actions-cell" style="justify-content:flex-end">
         <button class="icon-btn edit-btn" title="Editar" onclick="editOption(${idx})">✏️</button>
-        ${used?'':`<button class="icon-btn del-btn" title="Eliminar" onclick="deleteOption(${idx})">🗑️</button>`}
+        <button class="icon-btn del-btn" title="Eliminar" onclick="deleteOption(${idx})">🗑️</button>
       </div></td>`;
     b.appendChild(tr);
   });
 }
-function closeOpt(){
+async function closeOpt(){
   document.getElementById('optModal').classList.add('hidden');
-  // refrescar el select objetivo
+  await loadCatalogs();
   refreshTargetSelect();
 }
 function refreshTargetSelect(){
@@ -568,7 +602,6 @@ function refreshTargetSelect(){
   opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
 }
 
-/* --- Agregar / editar opción --- */
 let editOptIdx=null;
 function addOptionRow(){ editOptIdx=null; document.getElementById('optEditTitle').textContent="Nueva Opción";
   document.getElementById('optEditInput').value=""; document.getElementById('optEditModal').classList.remove('hidden');
@@ -577,65 +610,74 @@ function editOption(idx){ editOptIdx=idx; document.getElementById('optEditTitle'
   document.getElementById('optEditInput').value=currentOptions()[idx]; document.getElementById('optEditModal').classList.remove('hidden');
   setTimeout(()=>document.getElementById('optEditInput').focus(),50); }
 function closeOptEdit(){ document.getElementById('optEditModal').classList.add('hidden'); }
-function saveOption(){
+
+async function saveOption(){
   const v=document.getElementById('optEditInput').value.trim();
   if(!v){ toast("Ingrese un valor"); return; }
-  const opts=currentOptions();
-  if(editOptIdx===null){
-    if(opts.includes(v)){ toast("Esa opción ya existe"); return; }
-    opts.push(v); toast("Opción agregada");
-  } else {
-    const old=opts[editOptIdx];
-    opts[editOptIdx]=v;
-    // propagar cambio a registros existentes
-    if(curDependent){
-      records.forEach(r=>{ if(r[curDependent.fieldKey]===old) r[curDependent.fieldKey]=v; });
+  const tipo=currentTipo();
+  try{
+    if(editOptIdx===null){
+      const body={valor:v};
+      if(curDependent){ body.parent=curDependent.parentVal; if(curDependent.mode==="familia") body.parentDept=curDependent.parentDept; }
+      await api('POST','/catalogos/'+encodeURIComponent(tipo), body);
+      toast("Opción agregada");
     } else {
-      const fk=ALL_FIELDS.filter(f=>f.list===curListKey).map(f=>f.key);
-      records.forEach(r=>fk.forEach(k=>{ if(r[k]===old) r[k]=v; }));
+      const old=currentOptions()[editOptIdx];
+      await api('PUT','/catalogos/'+encodeURIComponent(tipo)+'/'+encodeURIComponent(old), {nuevo:v});
+      toast("Opción actualizada");
     }
-    toast("Opción actualizada");
-  }
-  closeOptEdit(); renderOpt(); renderMain();
+    closeOptEdit();
+    await loadCatalogs(); renderOpt();
+    await loadRecords(); renderMain();
+  }catch(e){ toast("Error: "+e.message); }
 }
-function deleteOption(idx){
-  const opts=currentOptions();
-  opts.splice(idx,1);
-  toast("Opción eliminada"); renderOpt();
+async function deleteOption(idx){
+  const old=currentOptions()[idx];
+  const tipo=currentTipo();
+  try{
+    await api('DELETE','/catalogos/'+encodeURIComponent(tipo)+'/'+encodeURIComponent(old));
+    toast("Opción eliminada");
+    await loadCatalogs(); renderOpt();
+  }catch(e){ toast(e.message); }
 }
 
-/* ---------- Exportar a Excel ---------- */
-function exportExcel(){
+/* ============================================================
+   Exportar a Excel (descarga los registros completos)
+   ============================================================ */
+async function exportExcel(){
   if(!records.length){ toast("No hay registros para exportar"); return; }
   if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); return; }
+  toast("Preparando Excel...");
+  let full;
+  try{ full = await Promise.all(records.map(r=>api('GET','/solicitudes/'+r.id))); }
+  catch(e){ toast("Error al exportar: "+e.message); return; }
   const headers = ALL_FIELDS.map(f=>f.label);
-  const rows = records.map(r=>{
+  const rows = full.map(r=>{
     const o={};
     ALL_FIELDS.forEach(f=>{ o[f.label] = (r[f.key]===undefined||r[f.key]===null)?"":r[f.key]; });
     return o;
   });
   const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
-  ws['!cols'] = headers.map(h=>{
-    let max=h.length;
-    rows.forEach(r=>{ const v=String(r[h]||""); if(v.length>max)max=v.length; });
-    return {wch:Math.min(Math.max(max+2,12),55)};
-  });
+  ws['!cols'] = headers.map(h=>{ let max=h.length; rows.forEach(r=>{ const v=String(r[h]||""); if(v.length>max)max=v.length; }); return {wch:Math.min(Math.max(max+2,12),55)}; });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Registros");
-  const fecha = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `Solicitud_Creacion_Codigos_${fecha}.xlsx`);
-  toast("Excel descargado ("+records.length+" registro(s))");
+  XLSX.writeFile(wb, `Solicitud_Creacion_Codigos_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast("Excel descargado ("+rows.length+" registro(s))");
 }
 
-/* ---------- util ---------- */
+/* ============================================================
+   Utilidades
+   ============================================================ */
 function esc(s){ if(s===undefined||s===null||s==="")return "—"; return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 let toastT;
 function toast(msg){ let t=document.querySelector('.toast'); if(t)t.remove();
   t=document.createElement('div'); t.className="toast"; t.textContent=msg; document.body.appendChild(t);
-  clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),2600); }
+  clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),2800); }
 
-// Enter en modal de opción
 document.getElementById('optEditInput').addEventListener('keydown',e=>{if(e.key==='Enter')saveOption();});
+
+/* Arranque */
+init();
 </script>
 </body>
 </html>

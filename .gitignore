@@ -1,0 +1,15 @@
+# Dependencias
+node_modules/
+api/node_modules/
+
+# Configuración local (nunca subir credenciales)
+api/local.settings.json
+*.env
+.env
+
+# Archivos temporales de build
+_frontend_*.html
+
+# Sistema
+.DS_Store
+Thumbs.db

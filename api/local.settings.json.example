@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "",
+    "SQL_SERVER": "tuservidor.database.windows.net",
+    "SQL_DATABASE": "RegistroCodigos",
+    "SQL_USER": "tuusuario",
+    "SQL_PASSWORD": "tucontraseña"
+  }
+}
