@@ -416,3 +416,221 @@ app.http('solicitud-delete', {
     }
   }
 });
+
+/* ============================================================
+   MÓDULO: SOLICITUD DE ORDEN DE PEDIDO
+   ============================================================ */
+const ORD_CAT = {
+  productos:  'cat.OP_Producto',
+  bodegas:    'cat.OP_Bodega',
+  proveedores:'cat.OP_Proveedor',
+  transporte: 'cat.OP_Transporte',
+  sector:     'cat.OP_Sector'
+};
+const ORD_FIELDS = [
+  { key:'codigo_producto', col:'ProductoId',          type:'cat', cat:'productos', required:true },
+  { key:'descripcion',     col:'Descripcion',         type:'text', required:true },
+  { key:'cajas',           col:'Cajas',               type:'int' },
+  { key:'unidades_caja',   col:'UnidadesPorCaja',     type:'int' },
+  { key:'total_unidades',  col:'TotalUnidades',       type:'int' },
+  { key:'bodega',          col:'BodegaId',            type:'cat', cat:'bodegas' },
+  { key:'proveedor',       col:'ProveedorId',         type:'cat', cat:'proveedores', required:true },
+  { key:'transporte',      col:'TransporteId',        type:'cat', cat:'transporte' },
+  { key:'sector',          col:'SectorId',            type:'cat', cat:'sector' },
+  { key:'fecha_entrega',   col:'FechaEntrega',        type:'date' },
+  { key:'precio_especial', col:'PrecioEspecial',      type:'decimal' },
+  { key:'num_emb',         col:'NumeroEMB',           type:'text' },
+  { key:'fecha_venc_emb',  col:'FechaVencimientoEMB', type:'date' },
+  { key:'observaciones',   col:'Observaciones',       type:'text' }
+];
+const ORD_SELECT_FULL = `
+SELECT o.Id AS id, p.Nombre AS codigo_producto, o.Descripcion AS descripcion,
+       o.Cajas AS cajas, o.UnidadesPorCaja AS unidades_caja, o.TotalUnidades AS total_unidades,
+       b.Nombre AS bodega, pr.Nombre AS proveedor, tr.Nombre AS transporte, se.Nombre AS sector,
+       CONVERT(varchar(10),o.FechaEntrega,23) AS fecha_entrega, o.PrecioEspecial AS precio_especial,
+       o.NumeroEMB AS num_emb, CONVERT(varchar(10),o.FechaVencimientoEMB,23) AS fecha_venc_emb,
+       o.Observaciones AS observaciones
+FROM dbo.OrdenPedido o
+JOIN cat.OP_Producto  p  ON p.Id=o.ProductoId
+LEFT JOIN cat.OP_Bodega    b  ON b.Id=o.BodegaId
+JOIN cat.OP_Proveedor pr ON pr.Id=o.ProveedorId
+LEFT JOIN cat.OP_Transporte tr ON tr.Id=o.TransporteId
+LEFT JOIN cat.OP_Sector    se ON se.Id=o.SectorId`;
+
+function ordSqlType(f) {
+  if (f.type === 'int' || f.col.endsWith('Id')) return sql.Int;
+  if (f.type === 'date') return sql.Date;
+  if (f.type === 'decimal') return sql.Decimal(18, 2);
+  return sql.NVarChar;
+}
+async function ordResolve(pool, body) {
+  const out = {};
+  for (const f of ORD_FIELDS) {
+    const v = body[f.key];
+    if (f.type === 'text')         out[f.col] = v ? String(v) : null;
+    else if (f.type === 'int')     out[f.col] = (v !== undefined && v !== '' && v !== null) ? parseInt(v, 10) : null;
+    else if (f.type === 'decimal') out[f.col] = (v !== undefined && v !== '' && v !== null) ? parseFloat(v) : null;
+    else if (f.type === 'date')    out[f.col] = v ? v : null;
+    else if (f.type === 'cat')     out[f.col] = await catId(pool, ORD_CAT[f.cat], v);
+  }
+  return out;
+}
+function ordValidate(body) {
+  return ORD_FIELDS.filter(f => f.required && !String(body[f.key] || '').trim()).map(f => f.key);
+}
+
+/* Catálogos del módulo de órdenes */
+app.http('catalogos-ordenes', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'catalogos-ordenes',
+  handler: async (request, context) => {
+    try {
+      const pool = await getPool();
+      const one = async (t) => (await pool.request()
+        .query(`SELECT Nombre FROM ${t} WHERE Activo=1 ORDER BY Nombre`)).recordset.map(r => r.Nombre);
+      const [productos, bodegas, proveedores, transporte, sector] = await Promise.all([
+        one('cat.OP_Producto'), one('cat.OP_Bodega'), one('cat.OP_Proveedor'),
+        one('cat.OP_Transporte'), one('cat.OP_Sector')
+      ]);
+      return json(200, { productos, bodegas, proveedores, transporte, sector });
+    } catch (e) { context.error(e); return json(500, { error: 'Error al cargar catálogos', detail: e.message }); }
+  }
+});
+app.http('catalogos-ordenes-add', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'catalogos-ordenes/{tipo}',
+  handler: async (request, context) => {
+    try {
+      const t = ORD_CAT[request.params.tipo];
+      if (!t) return json(400, { error: 'Catálogo desconocido' });
+      const body = await request.json();
+      const valor = (body.valor || '').trim();
+      if (!valor) return json(400, { error: 'Falta el valor' });
+      const pool = await getPool();
+      await pool.request().input('n', sql.NVarChar, valor).query(`INSERT INTO ${t} (Nombre) VALUES (@n)`);
+      return json(201, { ok: true });
+    } catch (e) {
+      context.error(e);
+      if (e.number === 2627 || e.number === 2601) return json(409, { error: 'Esa opción ya existe' });
+      return json(500, { error: 'No se pudo agregar', detail: e.message });
+    }
+  }
+});
+app.http('catalogos-ordenes-edit', {
+  methods: ['PUT'], authLevel: 'anonymous', route: 'catalogos-ordenes/{tipo}/{valor}',
+  handler: async (request, context) => {
+    try {
+      const t = ORD_CAT[request.params.tipo];
+      if (!t) return json(400, { error: 'Catálogo desconocido' });
+      const actual = decodeURIComponent(request.params.valor);
+      const body = await request.json();
+      const nuevo = (body.nuevo || '').trim();
+      if (!nuevo) return json(400, { error: 'Falta el nuevo valor' });
+      const pool = await getPool();
+      const r = await pool.request().input('a', sql.NVarChar, actual).input('n', sql.NVarChar, nuevo)
+        .query(`UPDATE ${t} SET Nombre=@n WHERE Nombre=@a`);
+      return json(200, { ok: true, updated: r.rowsAffected[0] });
+    } catch (e) {
+      context.error(e);
+      if (e.number === 2627 || e.number === 2601) return json(409, { error: 'Esa opción ya existe' });
+      return json(500, { error: 'No se pudo actualizar', detail: e.message });
+    }
+  }
+});
+app.http('catalogos-ordenes-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'catalogos-ordenes/{tipo}/{valor}',
+  handler: async (request, context) => {
+    try {
+      const t = ORD_CAT[request.params.tipo];
+      if (!t) return json(400, { error: 'Catálogo desconocido' });
+      const valor = decodeURIComponent(request.params.valor);
+      const pool = await getPool();
+      await pool.request().input('v', sql.NVarChar, valor).query(`DELETE FROM ${t} WHERE Nombre=@v`);
+      return json(200, { ok: true });
+    } catch (e) {
+      context.error(e);
+      if (e.number === 547) return json(409, { error: 'La opción está en uso y no se puede eliminar' });
+      return json(500, { error: 'No se pudo eliminar', detail: e.message });
+    }
+  }
+});
+
+/* CRUD de órdenes */
+app.http('ordenes-list', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'ordenes',
+  handler: async (request, context) => {
+    try {
+      const pool = await getPool();
+      const r = await pool.request().query(
+        `SELECT Id AS id, Producto AS codigo_producto, Descripcion AS descripcion,
+                Cajas AS cajas, TotalUnidades AS total_unidades, Bodega AS bodega,
+                Proveedor AS proveedor, CONVERT(varchar(10),FechaEntrega,23) AS fecha_entrega
+         FROM dbo.vOrdenPedido ORDER BY Id DESC`);
+      return json(200, r.recordset);
+    } catch (e) { context.error(e); return json(500, { error: 'Error al listar', detail: e.message }); }
+  }
+});
+app.http('orden-get', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'ordenes/{id}',
+  handler: async (request, context) => {
+    try {
+      const pool = await getPool();
+      const r = await pool.request().input('id', sql.Int, parseInt(request.params.id, 10))
+        .query(`${ORD_SELECT_FULL} WHERE o.Id=@id`);
+      if (!r.recordset.length) return json(404, { error: 'No encontrado' });
+      return json(200, r.recordset[0]);
+    } catch (e) { context.error(e); return json(500, { error: 'Error al obtener', detail: e.message }); }
+  }
+});
+app.http('orden-create', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'ordenes',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      const body = await request.json();
+      const missing = ordValidate(body);
+      if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
+      const pool = await getPool();
+      const vals = await ordResolve(pool, body);
+      const cols = Object.keys(vals);
+      const req = pool.request();
+      cols.forEach((c, i) => req.input('p' + i, ordSqlType(ORD_FIELDS.find(x => x.col === c)), vals[c]));
+      req.input('creadoPor', sql.NVarChar, user ? user.name : null);
+      const r = await req.query(
+        `INSERT INTO dbo.OrdenPedido (${cols.concat(['CreadoPor']).join(', ')})
+         OUTPUT INSERTED.Id VALUES (${cols.map((_, i) => '@p' + i).concat(['@creadoPor']).join(', ')})`);
+      return json(201, { ok: true, id: r.recordset[0].Id });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo crear', detail: e.message }); }
+  }
+});
+app.http('orden-update', {
+  methods: ['PUT'], authLevel: 'anonymous', route: 'ordenes/{id}',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      const id = parseInt(request.params.id, 10);
+      const body = await request.json();
+      const missing = ordValidate(body);
+      if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
+      const pool = await getPool();
+      const vals = await ordResolve(pool, body);
+      const cols = Object.keys(vals);
+      const req = pool.request().input('id', sql.Int, id);
+      cols.forEach((c, i) => req.input('p' + i, ordSqlType(ORD_FIELDS.find(x => x.col === c)), vals[c]));
+      req.input('modPor', sql.NVarChar, user ? user.name : null);
+      const setList = cols.map((c, i) => `${c}=@p${i}`)
+        .concat(['ModificadoPor=@modPor', 'FechaModificacion=SYSUTCDATETIME()']).join(', ');
+      await req.query(`UPDATE dbo.OrdenPedido SET ${setList} WHERE Id=@id`);
+      return json(200, { ok: true });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo actualizar', detail: e.message }); }
+  }
+});
+app.http('orden-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'ordenes/{id}',
+  handler: async (request, context) => {
+    try {
+      const pool = await getPool();
+      await pool.request().input('id', sql.Int, parseInt(request.params.id, 10))
+        .query(`DELETE FROM dbo.OrdenPedido WHERE Id=@id`);
+      return json(200, { ok: true });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar', detail: e.message }); }
+  }
+});

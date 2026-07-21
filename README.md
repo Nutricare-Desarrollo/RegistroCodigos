@@ -9,8 +9,8 @@ con autenticación **SSO de Microsoft (Entra ID)** y base de datos **Azure SQL**
   secciones, listas desplegables gestionables y exportación a Excel.
 - **api/** — API en **Azure Functions (Node.js v4)**. Expone `/api/*` y conecta a
   Azure SQL con el paquete `mssql`.
-- **database/** — Script T-SQL (`RegistroCodigos.sql`) con el esquema y los datos
-  semilla de todos los catálogos.
+- **database/** — Scripts T-SQL: `RegistroCodigos.sql` (módulo Códigos) y
+  `OrdenPedido.sql` (módulo Órdenes de Pedido), con esquema y datos semilla.
 - Hospedaje en **Azure Static Web Apps** (plan gratuito), que además gestiona el
   login con Entra ID sin código propio.
 
@@ -31,7 +31,14 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | GET    | /api/solicitudes/{id}        | Un registro completo                 |
 | POST   | /api/solicitudes             | Crear registro                       |
 | PUT    | /api/solicitudes/{id}        | Actualizar registro                  |
-| DELETE | /api/solicitudes/{id}        | Eliminar registro                    |
+| DELETE | /api/solicitudes/{id}        | Eliminar registro (códigos)          |
+| GET    | /api/catalogos-ordenes       | Listas del módulo de órdenes         |
+| POST/PUT/DELETE | /api/catalogos-ordenes/{tipo}[/{valor}] | Mantenimiento de opciones (órdenes) |
+| GET    | /api/ordenes                 | Listado de órdenes de pedido         |
+| GET    | /api/ordenes/{id}            | Una orden completa                   |
+| POST   | /api/ordenes                 | Crear orden                          |
+| PUT    | /api/ordenes/{id}            | Actualizar orden                     |
+| DELETE | /api/ordenes/{id}            | Eliminar orden                       |
 
 ## Puesta en marcha
 
