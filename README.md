@@ -51,7 +51,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 ### 3. Static Web App
 1. Portal → **Create a resource → Static Web App**. Conectar este repositorio de
    GitHub; usar `frontend` como *App location* y `api` como *Api location* (el
-   workflow ya está en `.github/workflows/`).
+   workflow lo crea Azure automáticamente al conectar el repositorio).
 2. En **Configuration** (App settings) de la Static Web App, agregar:
    - `AAD_CLIENT_ID`, `AAD_CLIENT_SECRET`
    - `SQL_SERVER`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD`
