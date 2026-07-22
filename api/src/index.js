@@ -1,5 +1,5 @@
 const { app } = require('@azure/functions');
-const { sql, getPool } = require('./db');
+const { query } = require('./db');
 
 /* ============================================================
    Utilidades
@@ -7,6 +7,10 @@ const { sql, getPool } = require('./db');
 function json(status, body) {
   return { status, jsonBody: body };
 }
+
+// Errores de PostgreSQL: 23505 = violación de UNIQUE, 23503 = violación de FK.
+const isUnique = (e) => e && e.code === '23505';
+const isFK     = (e) => e && e.code === '23503';
 
 // Lee el usuario autenticado que inyecta Static Web Apps (Entra ID / SSO).
 function getUser(request) {
@@ -80,7 +84,7 @@ SELECT s.Id AS id, s.Codigo AS codigo, s.Nombre AS nombre,
        lo.Nombre AS lote, ui.Nombre AS unidad_inv, uc.Nombre AS unidad_compra, uv.Nombre AS unidad_venta,
        em.Nombre AS empaque, s.CantidadPorCaja AS cant_caja,
        pr.Nombre AS proveedor, po.Nombre AS pais_origen,
-       s.RegistroSanitarioEMB AS reg_sanitario, CONVERT(varchar(10), s.FechaVencimientoEMB, 23) AS fecha_venc,
+       s.RegistroSanitarioEMB AS reg_sanitario, to_char(s.FechaVencimientoEMB, 'YYYY-MM-DD') AS fecha_venc,
        s.Modelo AS modelo, s.Marca AS marca, s.ClasificacionProveedor AS clasif_prov,
        ti.Nombre AS tipo_implante, ei.Nombre AS es_implantable,
        s.DescripcionDetallada AS desc_detallada, s.QueEs AS que_es, s.ParaQue AS para_que,
@@ -103,54 +107,45 @@ LEFT JOIN cat.OpcionSiNo    ei ON ei.Id=s.EsImplantableId
 LEFT JOIN cat.OpcionSiNo    qp ON qp.Id=s.QuedaPacienteId`;
 
 /* Resuelve el nombre de un catálogo a su Id (o null si viene vacío) */
-async function catId(pool, table, name) {
+async function catId(table, name) {
   if (!name) return null;
-  const r = await pool.request()
-    .input('n', sql.NVarChar, name)
-    .query(`SELECT TOP 1 Id FROM ${table} WHERE Nombre=@n`);
-  if (!r.recordset.length) throw new Error(`Valor no encontrado en ${table}: "${name}"`);
-  return r.recordset[0].Id;
+  const r = await query(`SELECT Id FROM ${table} WHERE Nombre=$1 LIMIT 1`, [name]);
+  if (!r.rows.length) throw new Error(`Valor no encontrado en ${table}: "${name}"`);
+  return r.rows[0].id;
 }
-async function depId(pool, name) { return catId(pool, 'cat.Departamento', name); }
-async function lineaId(pool, name, depId) {
+async function depId(name) { return catId('cat.Departamento', name); }
+async function lineaId(name, departamentoId) {
   if (!name) return null;
-  const r = await pool.request()
-    .input('n', sql.NVarChar, name).input('d', sql.Int, depId)
-    .query(`SELECT TOP 1 Id FROM cat.Linea WHERE Nombre=@n AND DepartamentoId=@d`);
-  if (!r.recordset.length) throw new Error(`Línea no encontrada: "${name}"`);
-  return r.recordset[0].Id;
+  const r = await query(
+    `SELECT Id FROM cat.Linea WHERE Nombre=$1 AND DepartamentoId=$2 LIMIT 1`, [name, departamentoId]);
+  if (!r.rows.length) throw new Error(`Línea no encontrada: "${name}"`);
+  return r.rows[0].id;
 }
-async function familiaId(pool, name, lineaId) {
+async function familiaId(name, lineaIdVal) {
   if (!name) return null;
-  const r = await pool.request()
-    .input('n', sql.NVarChar, name).input('l', sql.Int, lineaId)
-    .query(`SELECT TOP 1 Id FROM cat.Familia WHERE Nombre=@n AND LineaId=@l`);
-  if (!r.recordset.length) throw new Error(`Familia no encontrada: "${name}"`);
-  return r.recordset[0].Id;
+  const r = await query(
+    `SELECT Id FROM cat.Familia WHERE Nombre=$1 AND LineaId=$2 LIMIT 1`, [name, lineaIdVal]);
+  if (!r.rows.length) throw new Error(`Familia no encontrada: "${name}"`);
+  return r.rows[0].id;
 }
 
 /* Convierte el cuerpo del formulario en {columna: valor} listo para INSERT/UPDATE */
-async function resolveRecord(pool, body) {
+async function resolveRecord(body) {
   const out = {};
-  const dId = await depId(pool, body.departamento);
-  const lId = await lineaId(pool, body.linea, dId);
-  const fId = await familiaId(pool, body.familia, lId);
+  const dId = await depId(body.departamento);
+  const lId = await lineaId(body.linea, dId);
+  const fId = await familiaId(body.familia, lId);
   for (const f of FIELD_MAP) {
     const v = body[f.key];
     if (f.type === 'text')        out[f.col] = v ? String(v) : null;
     else if (f.type === 'int')    out[f.col] = v !== undefined && v !== '' && v !== null ? parseInt(v, 10) : null;
     else if (f.type === 'date')   out[f.col] = v ? v : null;
-    else if (f.type === 'cat')    out[f.col] = await catId(pool, CAT_TABLES[f.cat], v);
+    else if (f.type === 'cat')    out[f.col] = await catId(CAT_TABLES[f.cat], v);
     else if (f.type === 'dep')    out[f.col] = dId;
     else if (f.type === 'linea')  out[f.col] = lId;
     else if (f.type === 'familia')out[f.col] = fId;
   }
   return out;
-}
-function sqlType(f) {
-  if (f.type === 'int' || f.col.endsWith('Id')) return sql.Int;
-  if (f.type === 'date') return sql.Date;
-  return sql.NVarChar;
 }
 function validateRequired(body) {
   const missing = FIELD_MAP.filter(f => f.required && !String(body[f.key] || '').trim()).map(f => f.key);
@@ -176,10 +171,8 @@ app.http('catalogos', {
   methods: ['GET'], authLevel: 'anonymous', route: 'catalogos',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      const one = async (table) => (await pool.request()
-        .query(`SELECT Nombre FROM ${table} WHERE Activo=1 ORDER BY Nombre`))
-        .recordset.map(r => r.Nombre);
+      const one = async (table) => (await query(
+        `SELECT Nombre FROM ${table} WHERE Activo=true ORDER BY Nombre`)).rows.map(r => r.nombre);
 
       const [grupo_articulo, centro_costo, unidades, empaque, tipo_implante,
              origen, proveedores, sino] = await Promise.all([
@@ -188,24 +181,24 @@ app.http('catalogos', {
         one('cat.Proveedor'), one('cat.OpcionSiNo')
       ]);
 
-      const deps = (await pool.request()
-        .query(`SELECT Id, Nombre FROM cat.Departamento WHERE Activo=1 ORDER BY Nombre`)).recordset;
-      const lineas = (await pool.request()
-        .query(`SELECT l.Id, l.Nombre, d.Nombre AS Dep FROM cat.Linea l
-                JOIN cat.Departamento d ON d.Id=l.DepartamentoId WHERE l.Activo=1 ORDER BY l.Nombre`)).recordset;
-      const familias = (await pool.request()
-        .query(`SELECT f.Nombre, l.Nombre AS Lin FROM cat.Familia f
-                JOIN cat.Linea l ON l.Id=f.LineaId WHERE f.Activo=1 ORDER BY f.Nombre`)).recordset;
+      const deps = (await query(
+        `SELECT Id, Nombre FROM cat.Departamento WHERE Activo=true ORDER BY Nombre`)).rows;
+      const lineas = (await query(
+        `SELECT l.Id, l.Nombre, d.Nombre AS dep FROM cat.Linea l
+         JOIN cat.Departamento d ON d.Id=l.DepartamentoId WHERE l.Activo=true ORDER BY l.Nombre`)).rows;
+      const familias = (await query(
+        `SELECT f.Nombre, l.Nombre AS lin FROM cat.Familia f
+         JOIN cat.Linea l ON l.Id=f.LineaId WHERE f.Activo=true ORDER BY f.Nombre`)).rows;
 
       const dept_lines = {};
-      deps.forEach(d => dept_lines[d.Nombre] = []);
-      lineas.forEach(l => { (dept_lines[l.Dep] = dept_lines[l.Dep] || []).push(l.Nombre); });
+      deps.forEach(d => dept_lines[d.nombre] = []);
+      lineas.forEach(l => { (dept_lines[l.dep] = dept_lines[l.dep] || []).push(l.nombre); });
       const familiasMap = {};
-      lineas.forEach(l => familiasMap[l.Nombre] = []);
-      familias.forEach(f => { (familiasMap[f.Lin] = familiasMap[f.Lin] || []).push(f.Nombre); });
+      lineas.forEach(l => familiasMap[l.nombre] = []);
+      familias.forEach(f => { (familiasMap[f.lin] = familiasMap[f.lin] || []).push(f.nombre); });
 
       return json(200, {
-        departamentos: deps.map(d => d.Nombre),
+        departamentos: deps.map(d => d.nombre),
         dept_lines, familias: familiasMap,
         grupo_articulo, centro_costo, unidades, empaque, tipo_implante,
         origen, proveedores, lote: sino, es_implantable: sino
@@ -232,27 +225,23 @@ app.http('catalogo-add', {
       const body = await request.json();
       const valor = (body.valor || '').trim();
       if (!valor) return json(400, { error: 'Falta el valor' });
-      const pool = await getPool();
 
       if (tipo === 'lineas') {
-        const dId = await depId(pool, body.parent);
-        await pool.request().input('d', sql.Int, dId).input('n', sql.NVarChar, valor)
-          .query(`INSERT INTO cat.Linea (DepartamentoId, Nombre) VALUES (@d, @n)`);
+        const dId = await depId(body.parent);
+        await query(`INSERT INTO cat.Linea (DepartamentoId, Nombre) VALUES ($1, $2)`, [dId, valor]);
       } else if (tipo === 'familias') {
-        const dId = await depId(pool, body.parentDept);
-        const lId = await lineaId(pool, body.parent, dId);
-        await pool.request().input('l', sql.Int, lId).input('n', sql.NVarChar, valor)
-          .query(`INSERT INTO cat.Familia (LineaId, Nombre) VALUES (@l, @n)`);
+        const dId = await depId(body.parentDept);
+        const lId = await lineaId(body.parent, dId);
+        await query(`INSERT INTO cat.Familia (LineaId, Nombre) VALUES ($1, $2)`, [lId, valor]);
       } else if (CAT_TABLES[tipo]) {
-        await pool.request().input('n', sql.NVarChar, valor)
-          .query(`INSERT INTO ${CAT_TABLES[tipo]} (Nombre) VALUES (@n)`);
+        await query(`INSERT INTO ${CAT_TABLES[tipo]} (Nombre) VALUES ($1)`, [valor]);
       } else {
         return json(400, { error: 'Catálogo desconocido: ' + tipo });
       }
       return json(201, { ok: true });
     } catch (e) {
       context.error(e);
-      if (e.number === 2627 || e.number === 2601) return json(409, { error: 'Esa opción ya existe' });
+      if (isUnique(e)) return json(409, { error: 'Esa opción ya existe' });
       return json(500, { error: 'No se pudo agregar', detail: e.message });
     }
   }
@@ -267,18 +256,16 @@ app.http('catalogo-edit', {
       const body = await request.json();
       const nuevo = (body.nuevo || '').trim();
       if (!nuevo) return json(400, { error: 'Falta el nuevo valor' });
-      const pool = await getPool();
       let table;
       if (tipo === 'lineas') table = 'cat.Linea';
       else if (tipo === 'familias') table = 'cat.Familia';
       else table = CAT_TABLES[tipo];
       if (!table) return json(400, { error: 'Catálogo desconocido' });
-      const r = await pool.request().input('a', sql.NVarChar, actual).input('n', sql.NVarChar, nuevo)
-        .query(`UPDATE ${table} SET Nombre=@n WHERE Nombre=@a`);
-      return json(200, { ok: true, updated: r.rowsAffected[0] });
+      const r = await query(`UPDATE ${table} SET Nombre=$1 WHERE Nombre=$2`, [nuevo, actual]);
+      return json(200, { ok: true, updated: r.rowCount });
     } catch (e) {
       context.error(e);
-      if (e.number === 2627 || e.number === 2601) return json(409, { error: 'Esa opción ya existe' });
+      if (isUnique(e)) return json(409, { error: 'Esa opción ya existe' });
       return json(500, { error: 'No se pudo actualizar', detail: e.message });
     }
   }
@@ -290,18 +277,16 @@ app.http('catalogo-delete', {
     try {
       const tipo = request.params.tipo;
       const valor = decodeURIComponent(request.params.valor);
-      const pool = await getPool();
       let table;
       if (tipo === 'lineas') table = 'cat.Linea';
       else if (tipo === 'familias') table = 'cat.Familia';
       else table = CAT_TABLES[tipo];
       if (!table) return json(400, { error: 'Catálogo desconocido' });
-      await pool.request().input('v', sql.NVarChar, valor)
-        .query(`DELETE FROM ${table} WHERE Nombre=@v`);
+      await query(`DELETE FROM ${table} WHERE Nombre=$1`, [valor]);
       return json(200, { ok: true });
     } catch (e) {
       context.error(e);
-      if (e.number === 547) return json(409, { error: 'La opción está en uso y no se puede eliminar' });
+      if (isFK(e)) return json(409, { error: 'La opción está en uso y no se puede eliminar' });
       return json(500, { error: 'No se pudo eliminar', detail: e.message });
     }
   }
@@ -314,13 +299,12 @@ app.http('solicitudes-list', {
   methods: ['GET'], authLevel: 'anonymous', route: 'solicitudes',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      const r = await pool.request().query(
+      const r = await query(
         `SELECT Id AS id, Codigo AS codigo, Nombre AS nombre,
                 Departamento AS departamento, Linea AS linea, Familia AS familia,
                 Proveedor AS proveedor, PaisOrigen AS pais_origen
          FROM dbo.vSolicitud ORDER BY Id DESC`);
-      return json(200, r.recordset);
+      return json(200, r.rows);
     } catch (e) {
       context.error(e);
       return json(500, { error: 'Error al listar', detail: e.message });
@@ -332,11 +316,9 @@ app.http('solicitud-get', {
   methods: ['GET'], authLevel: 'anonymous', route: 'solicitudes/{id}',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      const r = await pool.request().input('id', sql.Int, parseInt(request.params.id, 10))
-        .query(`${SELECT_FULL} WHERE s.Id=@id`);
-      if (!r.recordset.length) return json(404, { error: 'No encontrado' });
-      return json(200, r.recordset[0]);
+      const r = await query(`${SELECT_FULL} WHERE s.Id=$1`, [parseInt(request.params.id, 10)]);
+      if (!r.rows.length) return json(404, { error: 'No encontrado' });
+      return json(200, r.rows[0]);
     } catch (e) {
       context.error(e);
       return json(500, { error: 'Error al obtener', detail: e.message });
@@ -352,20 +334,15 @@ app.http('solicitud-create', {
       const body = await request.json();
       const missing = validateRequired(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
-      const pool = await getPool();
-      const vals = await resolveRecord(pool, body);
+      const vals = await resolveRecord(body);
       const cols = Object.keys(vals);
-      const req = pool.request();
-      cols.forEach((c, i) => {
-        const f = FIELD_MAP.find(x => x.col === c);
-        req.input('p' + i, sqlType(f), vals[c]);
-      });
-      req.input('creadoPor', sql.NVarChar, user ? user.name : null);
+      const params = cols.map(c => vals[c]);
+      params.push(user ? user.name : null);
       const colList = cols.concat(['CreadoPor']).join(', ');
-      const parList = cols.map((_, i) => '@p' + i).concat(['@creadoPor']).join(', ');
-      const r = await req.query(
-        `INSERT INTO dbo.Solicitud (${colList}) OUTPUT INSERTED.Id VALUES (${parList})`);
-      return json(201, { ok: true, id: r.recordset[0].Id });
+      const placeholders = params.map((_, i) => '$' + (i + 1)).join(', ');
+      const r = await query(
+        `INSERT INTO dbo.Solicitud (${colList}) VALUES (${placeholders}) RETURNING Id`, params);
+      return json(201, { ok: true, id: r.rows[0].id });
     } catch (e) {
       context.error(e);
       return json(500, { error: 'No se pudo crear el registro', detail: e.message });
@@ -382,18 +359,15 @@ app.http('solicitud-update', {
       const body = await request.json();
       const missing = validateRequired(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
-      const pool = await getPool();
-      const vals = await resolveRecord(pool, body);
+      const vals = await resolveRecord(body);
       const cols = Object.keys(vals);
-      const req = pool.request().input('id', sql.Int, id);
-      cols.forEach((c, i) => {
-        const f = FIELD_MAP.find(x => x.col === c);
-        req.input('p' + i, sqlType(f), vals[c]);
-      });
-      req.input('modPor', sql.NVarChar, user ? user.name : null);
-      const setList = cols.map((c, i) => `${c}=@p${i}`)
-        .concat(['ModificadoPor=@modPor', 'FechaModificacion=SYSUTCDATETIME()']).join(', ');
-      await req.query(`UPDATE dbo.Solicitud SET ${setList} WHERE Id=@id`);
+      const params = [];
+      const sets = [];
+      cols.forEach(c => { params.push(vals[c]); sets.push(`${c}=$${params.length}`); });
+      params.push(user ? user.name : null); sets.push(`ModificadoPor=$${params.length}`);
+      sets.push(`FechaModificacion=(now() at time zone 'utc')`);
+      params.push(id);
+      await query(`UPDATE dbo.Solicitud SET ${sets.join(', ')} WHERE Id=$${params.length}`, params);
       return json(200, { ok: true });
     } catch (e) {
       context.error(e);
@@ -406,9 +380,7 @@ app.http('solicitud-delete', {
   methods: ['DELETE'], authLevel: 'anonymous', route: 'solicitudes/{id}',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      await pool.request().input('id', sql.Int, parseInt(request.params.id, 10))
-        .query(`DELETE FROM dbo.Solicitud WHERE Id=@id`);
+      await query(`DELETE FROM dbo.Solicitud WHERE Id=$1`, [parseInt(request.params.id, 10)]);
       return json(200, { ok: true });
     } catch (e) {
       context.error(e);
@@ -447,8 +419,8 @@ const ORD_SELECT_FULL = `
 SELECT o.Id AS id, p.Nombre AS codigo_producto, o.Descripcion AS descripcion,
        o.Cajas AS cajas, o.UnidadesPorCaja AS unidades_caja, o.TotalUnidades AS total_unidades,
        b.Nombre AS bodega, pr.Nombre AS proveedor, tr.Nombre AS transporte, se.Nombre AS sector,
-       CONVERT(varchar(10),o.FechaEntrega,23) AS fecha_entrega, o.PrecioEspecial AS precio_especial,
-       o.NumeroEMB AS num_emb, CONVERT(varchar(10),o.FechaVencimientoEMB,23) AS fecha_venc_emb,
+       to_char(o.FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega, o.PrecioEspecial AS precio_especial,
+       o.NumeroEMB AS num_emb, to_char(o.FechaVencimientoEMB, 'YYYY-MM-DD') AS fecha_venc_emb,
        o.Observaciones AS observaciones
 FROM dbo.OrdenPedido o
 JOIN cat.OP_Producto  p  ON p.Id=o.ProductoId
@@ -457,13 +429,7 @@ JOIN cat.OP_Proveedor pr ON pr.Id=o.ProveedorId
 LEFT JOIN cat.OP_Transporte tr ON tr.Id=o.TransporteId
 LEFT JOIN cat.OP_Sector    se ON se.Id=o.SectorId`;
 
-function ordSqlType(f) {
-  if (f.type === 'int' || f.col.endsWith('Id')) return sql.Int;
-  if (f.type === 'date') return sql.Date;
-  if (f.type === 'decimal') return sql.Decimal(18, 2);
-  return sql.NVarChar;
-}
-async function ordResolve(pool, body) {
+async function ordResolve(body) {
   const out = {};
   for (const f of ORD_FIELDS) {
     const v = body[f.key];
@@ -471,7 +437,7 @@ async function ordResolve(pool, body) {
     else if (f.type === 'int')     out[f.col] = (v !== undefined && v !== '' && v !== null) ? parseInt(v, 10) : null;
     else if (f.type === 'decimal') out[f.col] = (v !== undefined && v !== '' && v !== null) ? parseFloat(v) : null;
     else if (f.type === 'date')    out[f.col] = v ? v : null;
-    else if (f.type === 'cat')     out[f.col] = await catId(pool, ORD_CAT[f.cat], v);
+    else if (f.type === 'cat')     out[f.col] = await catId(ORD_CAT[f.cat], v);
   }
   return out;
 }
@@ -484,9 +450,8 @@ app.http('catalogos-ordenes', {
   methods: ['GET'], authLevel: 'anonymous', route: 'catalogos-ordenes',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      const one = async (t) => (await pool.request()
-        .query(`SELECT Nombre FROM ${t} WHERE Activo=1 ORDER BY Nombre`)).recordset.map(r => r.Nombre);
+      const one = async (t) => (await query(
+        `SELECT Nombre FROM ${t} WHERE Activo=true ORDER BY Nombre`)).rows.map(r => r.nombre);
       const [productos, bodegas, proveedores, transporte, sector] = await Promise.all([
         one('cat.OP_Producto'), one('cat.OP_Bodega'), one('cat.OP_Proveedor'),
         one('cat.OP_Transporte'), one('cat.OP_Sector')
@@ -504,12 +469,11 @@ app.http('catalogos-ordenes-add', {
       const body = await request.json();
       const valor = (body.valor || '').trim();
       if (!valor) return json(400, { error: 'Falta el valor' });
-      const pool = await getPool();
-      await pool.request().input('n', sql.NVarChar, valor).query(`INSERT INTO ${t} (Nombre) VALUES (@n)`);
+      await query(`INSERT INTO ${t} (Nombre) VALUES ($1)`, [valor]);
       return json(201, { ok: true });
     } catch (e) {
       context.error(e);
-      if (e.number === 2627 || e.number === 2601) return json(409, { error: 'Esa opción ya existe' });
+      if (isUnique(e)) return json(409, { error: 'Esa opción ya existe' });
       return json(500, { error: 'No se pudo agregar', detail: e.message });
     }
   }
@@ -524,13 +488,11 @@ app.http('catalogos-ordenes-edit', {
       const body = await request.json();
       const nuevo = (body.nuevo || '').trim();
       if (!nuevo) return json(400, { error: 'Falta el nuevo valor' });
-      const pool = await getPool();
-      const r = await pool.request().input('a', sql.NVarChar, actual).input('n', sql.NVarChar, nuevo)
-        .query(`UPDATE ${t} SET Nombre=@n WHERE Nombre=@a`);
-      return json(200, { ok: true, updated: r.rowsAffected[0] });
+      const r = await query(`UPDATE ${t} SET Nombre=$1 WHERE Nombre=$2`, [nuevo, actual]);
+      return json(200, { ok: true, updated: r.rowCount });
     } catch (e) {
       context.error(e);
-      if (e.number === 2627 || e.number === 2601) return json(409, { error: 'Esa opción ya existe' });
+      if (isUnique(e)) return json(409, { error: 'Esa opción ya existe' });
       return json(500, { error: 'No se pudo actualizar', detail: e.message });
     }
   }
@@ -542,12 +504,11 @@ app.http('catalogos-ordenes-delete', {
       const t = ORD_CAT[request.params.tipo];
       if (!t) return json(400, { error: 'Catálogo desconocido' });
       const valor = decodeURIComponent(request.params.valor);
-      const pool = await getPool();
-      await pool.request().input('v', sql.NVarChar, valor).query(`DELETE FROM ${t} WHERE Nombre=@v`);
+      await query(`DELETE FROM ${t} WHERE Nombre=$1`, [valor]);
       return json(200, { ok: true });
     } catch (e) {
       context.error(e);
-      if (e.number === 547) return json(409, { error: 'La opción está en uso y no se puede eliminar' });
+      if (isFK(e)) return json(409, { error: 'La opción está en uso y no se puede eliminar' });
       return json(500, { error: 'No se pudo eliminar', detail: e.message });
     }
   }
@@ -558,13 +519,12 @@ app.http('ordenes-list', {
   methods: ['GET'], authLevel: 'anonymous', route: 'ordenes',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      const r = await pool.request().query(
+      const r = await query(
         `SELECT Id AS id, Producto AS codigo_producto, Descripcion AS descripcion,
                 Cajas AS cajas, TotalUnidades AS total_unidades, Bodega AS bodega,
-                Proveedor AS proveedor, CONVERT(varchar(10),FechaEntrega,23) AS fecha_entrega
+                Proveedor AS proveedor, to_char(FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega
          FROM dbo.vOrdenPedido ORDER BY Id DESC`);
-      return json(200, r.recordset);
+      return json(200, r.rows);
     } catch (e) { context.error(e); return json(500, { error: 'Error al listar', detail: e.message }); }
   }
 });
@@ -572,11 +532,9 @@ app.http('orden-get', {
   methods: ['GET'], authLevel: 'anonymous', route: 'ordenes/{id}',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      const r = await pool.request().input('id', sql.Int, parseInt(request.params.id, 10))
-        .query(`${ORD_SELECT_FULL} WHERE o.Id=@id`);
-      if (!r.recordset.length) return json(404, { error: 'No encontrado' });
-      return json(200, r.recordset[0]);
+      const r = await query(`${ORD_SELECT_FULL} WHERE o.Id=$1`, [parseInt(request.params.id, 10)]);
+      if (!r.rows.length) return json(404, { error: 'No encontrado' });
+      return json(200, r.rows[0]);
     } catch (e) { context.error(e); return json(500, { error: 'Error al obtener', detail: e.message }); }
   }
 });
@@ -588,16 +546,15 @@ app.http('orden-create', {
       const body = await request.json();
       const missing = ordValidate(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
-      const pool = await getPool();
-      const vals = await ordResolve(pool, body);
+      const vals = await ordResolve(body);
       const cols = Object.keys(vals);
-      const req = pool.request();
-      cols.forEach((c, i) => req.input('p' + i, ordSqlType(ORD_FIELDS.find(x => x.col === c)), vals[c]));
-      req.input('creadoPor', sql.NVarChar, user ? user.name : null);
-      const r = await req.query(
-        `INSERT INTO dbo.OrdenPedido (${cols.concat(['CreadoPor']).join(', ')})
-         OUTPUT INSERTED.Id VALUES (${cols.map((_, i) => '@p' + i).concat(['@creadoPor']).join(', ')})`);
-      return json(201, { ok: true, id: r.recordset[0].Id });
+      const params = cols.map(c => vals[c]);
+      params.push(user ? user.name : null);
+      const colList = cols.concat(['CreadoPor']).join(', ');
+      const placeholders = params.map((_, i) => '$' + (i + 1)).join(', ');
+      const r = await query(
+        `INSERT INTO dbo.OrdenPedido (${colList}) VALUES (${placeholders}) RETURNING Id`, params);
+      return json(201, { ok: true, id: r.rows[0].id });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo crear', detail: e.message }); }
   }
 });
@@ -610,15 +567,15 @@ app.http('orden-update', {
       const body = await request.json();
       const missing = ordValidate(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
-      const pool = await getPool();
-      const vals = await ordResolve(pool, body);
+      const vals = await ordResolve(body);
       const cols = Object.keys(vals);
-      const req = pool.request().input('id', sql.Int, id);
-      cols.forEach((c, i) => req.input('p' + i, ordSqlType(ORD_FIELDS.find(x => x.col === c)), vals[c]));
-      req.input('modPor', sql.NVarChar, user ? user.name : null);
-      const setList = cols.map((c, i) => `${c}=@p${i}`)
-        .concat(['ModificadoPor=@modPor', 'FechaModificacion=SYSUTCDATETIME()']).join(', ');
-      await req.query(`UPDATE dbo.OrdenPedido SET ${setList} WHERE Id=@id`);
+      const params = [];
+      const sets = [];
+      cols.forEach(c => { params.push(vals[c]); sets.push(`${c}=$${params.length}`); });
+      params.push(user ? user.name : null); sets.push(`ModificadoPor=$${params.length}`);
+      sets.push(`FechaModificacion=(now() at time zone 'utc')`);
+      params.push(id);
+      await query(`UPDATE dbo.OrdenPedido SET ${sets.join(', ')} WHERE Id=$${params.length}`, params);
       return json(200, { ok: true });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo actualizar', detail: e.message }); }
   }
@@ -627,9 +584,7 @@ app.http('orden-delete', {
   methods: ['DELETE'], authLevel: 'anonymous', route: 'ordenes/{id}',
   handler: async (request, context) => {
     try {
-      const pool = await getPool();
-      await pool.request().input('id', sql.Int, parseInt(request.params.id, 10))
-        .query(`DELETE FROM dbo.OrdenPedido WHERE Id=@id`);
+      await query(`DELETE FROM dbo.OrdenPedido WHERE Id=$1`, [parseInt(request.params.id, 10)]);
       return json(200, { ok: true });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar', detail: e.message }); }
   }

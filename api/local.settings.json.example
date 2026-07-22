@@ -3,9 +3,11 @@
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "node",
     "AzureWebJobsStorage": "",
-    "SQL_SERVER": "tuservidor.database.windows.net",
-    "SQL_DATABASE": "RegistroCodigos",
-    "SQL_USER": "tuusuario",
-    "SQL_PASSWORD": "tucontraseña"
+    "PG_HOST": "tuservidor.postgres.database.azure.com",
+    "PG_PORT": "5432",
+    "PG_DATABASE": "RegistroCodigos",
+    "PG_USER": "tuusuario",
+    "PG_PASSWORD": "tucontraseña",
+    "PG_SSL": "true"
   }
 }

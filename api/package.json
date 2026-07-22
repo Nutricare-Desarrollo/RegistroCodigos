@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "@azure/functions": "^4.5.0",
-    "mssql": "^11.0.1"
+    "pg": "^8.13.1"
   }
 }

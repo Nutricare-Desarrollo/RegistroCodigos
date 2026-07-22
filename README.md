@@ -1,21 +1,22 @@
 # RegistroCodigos — Solicitud de Creación de Código de Artículo
 
 Aplicación web para registrar solicitudes de creación de códigos de artículo,
-con autenticación **SSO de Microsoft (Entra ID)** y base de datos **Azure SQL**.
+con autenticación **SSO de Microsoft (Entra ID)** y base de datos
+**Azure Database for PostgreSQL**.
 
 ## Arquitectura
 
 - **frontend/** — Sitio estático (HTML + JS). Grid de registros, formulario por
   secciones, listas desplegables gestionables y exportación a Excel.
 - **api/** — API en **Azure Functions (Node.js v4)**. Expone `/api/*` y conecta a
-  Azure SQL con el paquete `mssql`.
-- **database/** — Scripts T-SQL: `RegistroCodigos.sql` (módulo Códigos) y
-  `OrdenPedido.sql` (módulo Órdenes de Pedido), con esquema y datos semilla.
+  PostgreSQL con el paquete `pg`.
+- **database/** — Scripts PostgreSQL: `RegistroCodigos.sql` (módulo Códigos) y
+  `OrdenPedido.sql` (módulo Órdenes de Pedido), con esquema (`cat`/`dbo`) y datos semilla.
 - Hospedaje en **Azure Static Web Apps** (plan gratuito), que además gestiona el
   login con Entra ID sin código propio.
 
 ```
-Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions)  ─►  Azure SQL
+Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions)  ─►  Azure Database for PostgreSQL
 ```
 
 ## Endpoints de la API
@@ -42,12 +43,18 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 
 ## Puesta en marcha
 
-### 1. Base de datos (Azure SQL)
-1. Crear un **Azure SQL Database** (para mínimo costo: *Serverless* con auto-pausa,
-   o el nivel *Basic* de tarifa fija).
-2. Ejecutar `database/RegistroCodigos.sql` (con Azure Data Studio, SSMS o el editor
-   de consultas del portal). Crea las tablas y carga los catálogos.
-3. En **Firewall del servidor SQL**, permitir "Servicios de Azure".
+### 1. Base de datos (Azure Database for PostgreSQL)
+1. Crear un **Azure Database for PostgreSQL Flexible Server** (para mínimo costo:
+   tamaño *Burstable B1ms*; se puede detener cuando no se use). Crear la base
+   `RegistroCodigos`.
+2. Ejecutar, en orden, `database/RegistroCodigos.sql` y luego `database/OrdenPedido.sql`
+   con `psql` (o pgAdmin / Azure Data Studio). Crean los esquemas `cat`/`dbo`, las tablas
+   y los catálogos:
+   ```bash
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/RegistroCodigos.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/OrdenPedido.sql
+   ```
+3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
 ### 2. Registrar la app para SSO (Entra ID)
 1. Portal de Azure → **Microsoft Entra ID → App registrations → New registration**.
@@ -61,7 +68,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    workflow lo crea Azure automáticamente al conectar el repositorio).
 2. En **Configuration** (App settings) de la Static Web App, agregar:
    - `AAD_CLIENT_ID`, `AAD_CLIENT_SECRET`
-   - `SQL_SERVER`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD`
+   - `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`, `PG_SSL`
 3. En `frontend/staticwebapp.config.json`, reemplazar `<TENANT_ID>` por tu tenant.
 
 ### 4. Desarrollo local (opcional)
@@ -75,7 +82,8 @@ npx @azure/static-web-apps-cli start frontend --api-location api
 ```
 
 ## Seguridad
-- Las credenciales de SQL y el secret de Entra ID viven **solo** en las App
+- Las credenciales de PostgreSQL y el secret de Entra ID viven **solo** en las App
   Settings de Azure, nunca en el código ni en el repositorio.
+- La conexión a PostgreSQL usa TLS (`PG_SSL=true`, obligatorio en Azure).
 - Todas las rutas (`/` y `/api/*`) requieren usuario autenticado.
-- Las consultas SQL usan parámetros (previene inyección).
+- Las consultas SQL usan parámetros (`$1, $2, …`) para prevenir inyección.

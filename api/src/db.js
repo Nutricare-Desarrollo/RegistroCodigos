@@ -1,30 +1,26 @@
-const sql = require('mssql');
+const { Pool } = require('pg');
 
-// Configuración de conexión a Azure SQL.
+// Conexión a Azure Database for PostgreSQL (Flexible Server).
 // Las credenciales se leen de las App Settings (nunca van en el código).
-const config = {
-  server: process.env.SQL_SERVER,
-  database: process.env.SQL_DATABASE,
-  user: process.env.SQL_USER,
-  password: process.env.SQL_PASSWORD,
-  options: {
-    encrypt: true,               // obligatorio en Azure SQL
-    trustServerCertificate: false
-  },
-  pool: { max: 5, min: 0, idleTimeoutMillis: 30000 }
-};
+// PG_SSL: "true" (por defecto, obligatorio en Azure) | "false" (solo para pruebas locales).
+const useSsl = (process.env.PG_SSL || 'true').toLowerCase() !== 'false';
 
-let poolPromise = null;
+const pool = new Pool({
+  host: process.env.PG_HOST,
+  port: parseInt(process.env.PG_PORT || '5432', 10),
+  database: process.env.PG_DATABASE,
+  user: process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
+  // Azure exige TLS; rejectUnauthorized:false evita tener que empaquetar el CA.
+  ssl: useSsl ? { rejectUnauthorized: false } : false,
+  max: 5,
+  idleTimeoutMillis: 30000
+});
 
-// Reutiliza un único pool de conexiones entre invocaciones (buena práctica en Functions).
-function getPool() {
-  if (!poolPromise) {
-    poolPromise = sql.connect(config).catch(err => {
-      poolPromise = null; // permite reintentar si falló la primera conexión
-      throw err;
-    });
-  }
-  return poolPromise;
+// Un único pool reutilizado entre invocaciones (buena práctica en Functions).
+// query(text, params) -> { rows, rowCount }  (compatible con node-postgres)
+function query(text, params) {
+  return pool.query(text, params);
 }
 
-module.exports = { sql, getPool };
+module.exports = { pool, query };

@@ -12,28 +12,35 @@ en GitHub (`Nutricare-Desarrollo/RegistroCodigos`).
 
 ---
 
-## Paso 1 — Crear la base de datos (Azure SQL)
+## Paso 1 — Crear la base de datos (Azure Database for PostgreSQL)
 
-1. Portal de Azure → **Crear un recurso → SQL Database**.
+1. Portal de Azure → **Crear un recurso → Azure Database for PostgreSQL Flexible Server**.
 2. Grupo de recursos: crea uno nuevo, p. ej. `rg-registrocodigos`.
-3. Nombre de la base de datos: `RegistroCodigos`.
-4. Servidor: **Crear nuevo** → nombre único (ej. `sql-nutricare-registros`),
-   ubicación *East US* o *Central US*, autenticación **SQL** (usuario y contraseña;
-   anótalos, los usarás en el Paso 3).
-5. **Proceso y almacenamiento → Configurar**: elige **Serverless** (General Purpose)
-   con pausa automática, o el nivel **Basic** si prefieres cuota fija. Es lo más económico.
-6. Crea el recurso y espera a que termine.
-7. Abre el servidor SQL → **Redes** → activa **"Permitir que los servicios y recursos
-   de Azure accedan a este servidor"** y agrega tu IP actual para poder cargar el script.
+3. Nombre del servidor: nombre único (ej. `pg-nutricare-registros`); el dominio queda
+   `pg-nutricare-registros.postgres.database.azure.com`.
+4. Ubicación *East US* o *Central US*. Versión de PostgreSQL: **16** (o la más reciente).
+5. Tipo de carga de trabajo / proceso: elige **Burstable B1ms** (lo más económico).
+6. Autenticación: **PostgreSQL** (usuario y contraseña administradores; anótalos, los
+   usarás en el Paso 3).
+7. Crea el recurso y espera a que termine.
+8. Abre el servidor → **Redes** → activa **"Permitir el acceso público"**, marca
+   **"Permitir que los servicios y recursos de Azure accedan a este servidor"** y agrega
+   tu IP actual como regla de firewall para poder cargar el script.
+9. Crea la base de datos: en el servidor → **Bases de datos → Agregar**, nombre
+   `RegistroCodigos`. (También puedes crearla con `CREATE DATABASE "RegistroCodigos";`.)
 
 ### Cargar el esquema
-- En el portal, abre la base de datos → **Editor de consultas (versión preliminar)**,
-  inicia sesión con el usuario SQL.
-- Ejecuta **dos** scripts, en este orden:
+- Los scripts están en **PostgreSQL**. Ejecútalos con `psql` (o pgAdmin / Azure Data Studio
+  con la extensión de PostgreSQL), **en este orden**:
   1. `database/RegistroCodigos.sql` (módulo Creación de Códigos)
   2. `database/OrdenPedido.sql` (módulo Solicitud de Orden de Pedido)
-- Copia el contenido de cada uno en el Editor de consultas y ejecútalo.
-- (Alternativa: usar Azure Data Studio o SSMS conectándote al servidor.)
+- Ejemplo con `psql` (requiere TLS, ya incluido con `sslmode=require`):
+
+  ```bash
+  psql "host=pg-nutricare-registros.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=tuusuario password=TU_CONTRASEÑA sslmode=require" -f database/RegistroCodigos.sql
+  psql "host=pg-nutricare-registros.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=tuusuario password=TU_CONTRASEÑA sslmode=require" -f database/OrdenPedido.sql
+  ```
+- Los scripts crean los esquemas `cat` y `dbo`, y se pueden re-ejecutar (hacen `DROP ... IF EXISTS`).
 
 ---
 
@@ -59,14 +66,17 @@ en GitHub (`Nutricare-Desarrollo/RegistroCodigos`).
 
 En la Static Web App → **Configuración → Configuración de la aplicación**, agrega:
 
-| Nombre         | Valor                                        |
-|----------------|----------------------------------------------|
-| SQL_SERVER     | `sql-nutricare-registros.database.windows.net` |
-| SQL_DATABASE   | `RegistroCodigos`                            |
-| SQL_USER       | (el usuario SQL del Paso 1)                   |
-| SQL_PASSWORD   | (la contraseña del Paso 1)                    |
+| Nombre       | Valor                                                   |
+|--------------|---------------------------------------------------------|
+| PG_HOST      | `pg-nutricare-registros.postgres.database.azure.com`    |
+| PG_PORT      | `5432`                                                  |
+| PG_DATABASE  | `RegistroCodigos`                                       |
+| PG_USER      | (el usuario administrador del Paso 1)                   |
+| PG_PASSWORD  | (la contraseña del Paso 1)                              |
+| PG_SSL       | `true`                                                  |
 
-Guarda. La API ya podrá leer/escribir en la base de datos.
+Guarda. La API ya podrá leer/escribir en la base de datos. (`PG_SSL=true` es
+obligatorio en Azure; solo usa `false` para pruebas contra un PostgreSQL local sin TLS.)
 
 ---
 
@@ -99,7 +109,8 @@ Guarda. La API ya podrá leer/escribir en la base de datos.
 
 ## Notas
 
-- **Costo:** solo la base de datos. En Serverless con pausa automática, cuando nadie
-  la usa casi solo pagas el almacenamiento.
+- **Costo:** solo la base de datos. Con el tamaño **Burstable B1ms** es el nivel más
+  económico; además puedes **detener el servidor** (Start/Stop) cuando no se use para
+  reducir el gasto de cómputo.
 - **Seguridad:** las credenciales viven solo en la Configuración de la Static Web App,
   nunca en el código ni en el repositorio.
