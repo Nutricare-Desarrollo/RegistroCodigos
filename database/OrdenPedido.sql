@@ -40,6 +40,8 @@ CREATE TABLE dbo.OrdenPedido (
     NumeroEMB           VARCHAR(100) NULL,
     FechaVencimientoEMB DATE NULL,
     Observaciones       TEXT NULL,
+    Estado              VARCHAR(20) NOT NULL DEFAULT 'Pendiente'
+                        CONSTRAINT CK_OrdenPedido_Estado CHECK (Estado IN ('Pendiente','Procesado')),
     CreadoPor           VARCHAR(200) NULL,
     FechaCreacion       TIMESTAMP(0) NOT NULL DEFAULT (now() at time zone 'utc'),
     ModificadoPor       VARCHAR(200) NULL,
@@ -55,7 +57,8 @@ CREATE INDEX IX_OrdenPedido_Producto ON dbo.OrdenPedido(ProductoId);
 /* Vista aplanada para el listado principal */
 CREATE VIEW dbo.vOrdenPedido AS
 SELECT o.Id, p.Nombre AS Producto, o.Descripcion, o.Cajas, o.TotalUnidades,
-       b.Nombre AS Bodega, pr.Nombre AS Proveedor, o.FechaEntrega, o.FechaCreacion, o.CreadoPor
+       b.Nombre AS Bodega, pr.Nombre AS Proveedor, o.FechaEntrega,
+       o.Estado, o.FechaCreacion, o.CreadoPor
 FROM dbo.OrdenPedido o
 JOIN cat.OP_Producto  p  ON p.Id = o.ProductoId
 LEFT JOIN cat.OP_Bodega    b  ON b.Id = o.BodegaId

@@ -135,6 +135,21 @@ tbody tr:last-child td{border-bottom:none}
 @media(max-width:820px){.sidebar{position:static;width:100%;height:auto}.content{margin-left:0}.layout{flex-direction:column}}
 .cat-actions{display:flex;gap:7px;justify-content:flex-end}
 
+/* ===== Estado, vistas, filtros y roles ===== */
+.badge{padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:700;display:inline-block;white-space:nowrap}
+.badge-pend{background:#fdf0d5;color:#9a6a00}
+.badge-proc{background:#d9f2e4;color:#12724a}
+.view-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.view-tab{background:#fff;border:1px solid var(--line);color:var(--muted);padding:8px 18px;border-radius:8px;font-weight:600;font-size:13px}
+.view-tab:hover{border-color:var(--brand)}
+.view-tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+thead tr.filter-row th{background:#0d5478;padding:6px 10px;position:static;top:auto}
+thead tr.filter-row input{padding:6px 8px;font-size:12px;border-radius:5px;border:1px solid #2a6f95}
+.role-box{margin-top:12px}
+.role-box .rlbl{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700}
+.role-badge{display:inline-block;margin-top:4px;background:#e3f2fb;color:var(--brand-d);padding:4px 11px;border-radius:7px;font-weight:700;font-size:12.5px}
+.sim-note{font-size:10.5px;color:var(--warn);margin-top:6px;display:block;line-height:1.3}
+
 </style>
 </head>
 <body>
@@ -167,14 +182,19 @@ tbody tr:last-child td{border-bottom:none}
         <div class="nav-item" id="nav-ordenes" onclick="switchModule('ordenes')"><span class="ic">📦</span> Solicitud de Orden de Pedido</div>
         <div class="nav-label">Configuración</div>
         <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
+        <div class="nav-item hidden" id="nav-usuarios" onclick="showUsuarios()"><span class="ic">👥</span> Usuarios y Roles</div>
       </nav>
       <div class="userbox">
-        <div class="who"><b id="userName">Usuario</b><small>Administrador</small></div>
-        <div class="profile-toggle">
-          <button class="active" onclick="setPerfil(this,'Captura')">Captura</button>
-          <button onclick="setPerfil(this,'Contabilidad')">Contabilidad</button>
+        <div class="who"><b id="userName">Usuario</b><small id="userEmail"></small></div>
+        <div class="role-box">
+          <div class="rlbl">Rol</div>
+          <div><span class="role-badge" id="roleBadge">General</span></div>
+          <div id="roleSwitch" class="hidden">
+            <select id="roleSim" onchange="onRoleSim()" style="margin-top:6px"></select>
+            <span class="sim-note">Vista de prueba: cambie el rol para verificar los permisos.</span>
+          </div>
         </div>
-        <button class="btn-ghost" style="width:100%;margin-top:10px" onclick="logout()">Salir</button>
+        <button class="btn-ghost" style="width:100%;margin-top:12px" onclick="logout()">Salir</button>
       </div>
     </aside>
 
@@ -191,6 +211,10 @@ tbody tr:last-child td{border-bottom:none}
             <button class="btn-ghost" onclick="exportExcel()">⬇ Descargar Excel</button>
             <button class="btn-primary" id="addBtn" onclick="openForm()">＋ Nuevo Registro</button>
           </div>
+        </div>
+        <div class="view-tabs" id="viewTabs">
+          <button class="view-tab active" id="tabPend" onclick="setView('Pendiente')">Pendientes</button>
+          <button class="view-tab" id="tabProc" onclick="setView('Procesado')">Procesadas</button>
         </div>
         <div class="card">
           <div class="tbl-wrap">
@@ -229,6 +253,17 @@ tbody tr:last-child td{border-bottom:none}
         <div class="card"><div class="tbl-wrap">
           <table><thead><tr><th>Módulo</th><th>Lista</th><th>Opciones</th><th style="text-align:right">Acciones</th></tr></thead>
           <tbody id="catBody"></tbody></table>
+        </div></div>
+      </section>
+
+      <!-- USUARIOS Y ROLES (solo Administrador) -->
+      <section id="viewUsuarios" class="hidden">
+        <div class="page-head">
+          <div><h2>Usuarios y Roles</h2><div class="sub">Asigne el rol de cada usuario que ha iniciado sesión. La identidad la administra Microsoft (SSO); aquí solo se define el rol.</div></div>
+        </div>
+        <div class="card"><div class="tbl-wrap">
+          <table><thead><tr><th>Correo</th><th>Nombre</th><th>Último acceso</th><th style="width:200px">Rol</th></tr></thead>
+          <tbody id="usuariosBody"></tbody></table>
         </div></div>
       </section>
     </main>
@@ -288,7 +323,7 @@ const MODULES = {
     gridCols:[
       {k:"codigo",l:"Código",tag:true},{k:"nombre",l:"Nombre del Producto"},
       {k:"departamento",l:"Departamento"},{k:"linea",l:"Línea"},{k:"familia",l:"Familia"},
-      {k:"proveedor",l:"Proveedor"},{k:"pais_origen",l:"País Origen"}
+      {k:"proveedor",l:"Proveedor"},{k:"pais_origen",l:"País Origen"},{k:"estado",l:"Estado",estado:true}
     ],
     sections:[
       {title:"Información de Producto", fields:[
@@ -347,7 +382,7 @@ const MODULES = {
     gridCols:[
       {k:"codigo_producto",l:"Código",tag:true},{k:"descripcion",l:"Descripción"},
       {k:"cajas",l:"Cajas"},{k:"total_unidades",l:"Total Unid."},
-      {k:"bodega",l:"Bodega"},{k:"proveedor",l:"Proveedor"},{k:"fecha_entrega",l:"Fecha entrega"}
+      {k:"bodega",l:"Bodega"},{k:"proveedor",l:"Proveedor"},{k:"fecha_entrega",l:"Fecha entrega"},{k:"estado",l:"Estado",estado:true}
     ],
     sections:[{title:"Solicitud de Orden de Pedido", fields:[
       {key:"codigo_producto", label:"Código del Producto", type:"list", list:"productos", req:true},
@@ -376,6 +411,15 @@ function M(){ return MODULES[ACT]; }
 function allFields(){ return M().sections.flatMap(s=>s.fields); }
 let editingId=null;
 
+/* ---- Estado de roles, vista y filtros ---- */
+const ALL_ROLES=['General','Compras','Administrador'];
+let REAL_ROLE='General', EFF_ROLE='General', CUR_EMAIL='';
+let VIEW_ESTADO='Pendiente';       // pestaña activa: 'Pendiente' | 'Procesado'
+let COL_FILTERS={};                // filtros por columna
+function canDelete(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
+function canEditEstado(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
+function isAdmin(){ return EFF_ROLE==='Administrador'; }
+
 /* ====================== API ====================== */
 async function api(method, path, body){
   const opt={method, headers:{}};
@@ -391,6 +435,10 @@ async function init(){
   try{
     const user=await api('GET','/me');
     document.getElementById('userName').textContent=(user&&user.name)?user.name:'Usuario';
+    document.getElementById('userEmail').textContent=(user&&user.email)?user.email:'';
+    REAL_ROLE=(user&&user.rol)?user.rol:'General';
+    EFF_ROLE=REAL_ROLE; CUR_EMAIL=(user&&user.email)||'';
+    setupRoleUI();
     document.getElementById('login').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     await switchModule('codigos');
@@ -401,7 +449,29 @@ async function init(){
 }
 function msLogin(){ window.location.href='/.auth/login/aad?post_login_redirect_uri=/'; }
 function logout(){ window.location.href='/.auth/logout?post_logout_redirect_uri=/'; }
-function setPerfil(btn,p){ document.querySelectorAll('.profile-toggle button').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); toast("Perfil: "+p); }
+
+/* ---- Rol: presentación y simulación (solo Administrador) ---- */
+function setupRoleUI(){
+  document.getElementById('roleBadge').textContent=EFF_ROLE;
+  const sw=document.getElementById('roleSwitch');
+  if(REAL_ROLE==='Administrador'){
+    const sel=document.getElementById('roleSim'); sel.innerHTML='';
+    ALL_ROLES.forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=r;if(r===EFF_ROLE)o.selected=true;sel.appendChild(o);});
+    sw.classList.remove('hidden');
+  } else { sw.classList.add('hidden'); }
+  applyRoleVisibility();
+}
+function onRoleSim(){
+  EFF_ROLE=document.getElementById('roleSim').value;
+  document.getElementById('roleBadge').textContent=EFF_ROLE;
+  applyRoleVisibility();
+  // Si el admin deja de simular Administrador y estaba en Usuarios, vuelve al listado.
+  if(!isAdmin() && !document.getElementById('viewUsuarios').classList.contains('hidden')) showGrid();
+  renderMain();
+}
+function applyRoleVisibility(){
+  document.getElementById('nav-usuarios').classList.toggle('hidden', !isAdmin());
+}
 
 /* ====================== CARGA DE DATOS ====================== */
 async function loadCatalogsFor(id){
@@ -419,17 +489,20 @@ async function loadRecords(){ M().records = await api('GET', M().api.rec); }
 /* ====================== NAVEGACIÓN ====================== */
 async function switchModule(id){
   ACT=id; editingId=null;
+  VIEW_ESTADO='Pendiente'; COL_FILTERS={};
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const nav=document.getElementById('nav-'+id); if(nav) nav.classList.add('active');
   document.getElementById('viewForm').classList.add('hidden');
   document.getElementById('viewCatalogos').classList.add('hidden');
+  document.getElementById('viewUsuarios').classList.add('hidden');
   document.getElementById('viewGrid').classList.remove('hidden');
   try{ await loadCatalogsFor(id); await loadRecords(); }
   catch(e){ toast("Error al cargar datos: "+e.message); }
   renderMain();
 }
-function showGrid(){ document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewCatalogos').classList.add('hidden'); document.getElementById('viewGrid').classList.remove('hidden'); }
-function showForm(){ document.getElementById('viewGrid').classList.add('hidden'); document.getElementById('viewCatalogos').classList.add('hidden'); document.getElementById('viewForm').classList.remove('hidden'); }
+function showGrid(){ document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewCatalogos').classList.add('hidden'); document.getElementById('viewUsuarios').classList.add('hidden'); document.getElementById('viewGrid').classList.remove('hidden'); }
+function showForm(){ document.getElementById('viewGrid').classList.add('hidden'); document.getElementById('viewCatalogos').classList.add('hidden'); document.getElementById('viewUsuarios').classList.add('hidden'); document.getElementById('viewForm').classList.remove('hidden'); }
+function setView(estado){ VIEW_ESTADO=estado; renderMain(); }
 
 /* ====================== GRID ====================== */
 function renderMain(){
@@ -437,19 +510,45 @@ function renderMain(){
   document.getElementById('pageTitle').textContent=m.title;
   document.getElementById('pageSub').textContent=m.subtitle;
   document.getElementById('addBtn').textContent="＋ "+m.addLabel;
-  document.getElementById('mainHead').innerHTML="<tr>"+m.gridCols.map(c=>`<th>${c.l}</th>`).join('')+'<th style="text-align:right">Acciones</th></tr>';
+  document.getElementById('tabPend').classList.toggle('active',VIEW_ESTADO==='Pendiente');
+  document.getElementById('tabProc').classList.toggle('active',VIEW_ESTADO==='Procesado');
+  // Encabezados + fila de filtros por columna (la columna Estado no lleva filtro: se filtra con las pestañas)
+  const headCols=m.gridCols.map(c=>`<th>${c.l}</th>`).join('')+'<th style="text-align:right">Acciones</th>';
+  const filterCols=m.gridCols.map(c=> c.estado? '<th></th>'
+      : `<th><input type="text" placeholder="Filtrar…" oninput="onFilter('${c.k}',this.value)" value="${attr(COL_FILTERS[c.k])}"></th>`
+    ).join('')+'<th></th>';
+  document.getElementById('mainHead').innerHTML=`<tr>${headCols}</tr><tr class="filter-row">${filterCols}</tr>`;
+  renderBody();
+}
+function filteredRecords(){
+  return M().records.filter(r=>{
+    if((r.estado||'Pendiente')!==VIEW_ESTADO) return false;
+    return Object.keys(COL_FILTERS).every(k=>{
+      const f=(COL_FILTERS[k]||'').trim().toLowerCase(); if(!f) return true;
+      return String(r[k]==null?'':r[k]).toLowerCase().includes(f);
+    });
+  });
+}
+function renderBody(){
+  const m=M(); const rows=filteredRecords();
   const b=document.getElementById('mainBody'); b.innerHTML="";
-  document.getElementById('mainEmpty').classList.toggle('hidden', m.records.length>0);
-  document.getElementById('mainTable').classList.toggle('hidden', m.records.length===0);
-  m.records.forEach(r=>{
-    const cells=m.gridCols.map(c=> c.tag? `<td><span class="tag">${esc(r[c.k])}</span></td>` : `<td>${esc(r[c.k])}</td>`).join('');
+  document.getElementById('mainEmpty').classList.toggle('hidden', rows.length>0);
+  document.getElementById('mainTable').classList.toggle('hidden', rows.length===0);
+  rows.forEach(r=>{
+    const cells=m.gridCols.map(c=>{
+      if(c.estado) return `<td>${estadoBadge(r.estado)}</td>`;
+      if(c.tag)    return `<td><span class="tag">${esc(r[c.k])}</span></td>`;
+      return `<td>${esc(r[c.k])}</td>`;
+    }).join('');
+    const delBtn = canDelete()? `<button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button>` : '';
     const tr=document.createElement('tr');
     tr.innerHTML=cells+`<td><div class="actions-cell" style="justify-content:flex-end">
-      <button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>
-      <button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button></div></td>`;
+      <button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>${delBtn}</div></td>`;
     b.appendChild(tr);
   });
 }
+function estadoBadge(e){ const v=e||'Pendiente'; return `<span class="badge ${v==='Procesado'?'badge-proc':'badge-pend'}">${esc(v)}</span>`; }
+function onFilter(k,v){ COL_FILTERS[k]=v; renderBody(); }
 
 /* ====================== FORMULARIO ====================== */
 async function openForm(id){
@@ -475,6 +574,15 @@ function buildForm(rec){
       c.appendChild(wrap);
     });
   });
+  // Campo Estado: solo visible al EDITAR y para roles Compras/Administrador.
+  if(editingId && canEditEstado()){
+    const st=document.createElement('div'); st.className="section-title"; st.textContent="Flujo de trabajo"; c.appendChild(st);
+    const wrap=document.createElement('div'); wrap.className="field";
+    const lbl=document.createElement('label'); lbl.textContent="Estado"; wrap.appendChild(lbl);
+    const sel=document.createElement('select'); sel.id="fld_estado";
+    ['Pendiente','Procesado'].forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===(rec.estado||'Pendiente'))op.selected=true;sel.appendChild(op);});
+    wrap.appendChild(sel); c.appendChild(wrap);
+  }
 }
 function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
@@ -519,6 +627,7 @@ function dependentSelect(f,rec){
 async function saveRecord(){
   const rec={}; const missing=[];
   allFields().forEach(f=>{ const el=document.getElementById("fld_"+f.key); const v=el?el.value.trim():""; if(f.req&&!v)missing.push(f.label); rec[f.key]=v; });
+  const estEl=document.getElementById("fld_estado"); if(estEl) rec.estado=estEl.value;
   if(missing.length){ toast("Complete los campos obligatorios: "+missing.join(", ")); return; }
   const btn=document.getElementById('formSaveBtn'); btn.disabled=true;
   try{
@@ -648,6 +757,39 @@ function renderCatalogos(){
 }
 function manageCat(modId,key){ ACT=modId; openOpt(key, LIST_LABELS[key]||key, null); }
 
+/* ====================== USUARIOS Y ROLES (solo Administrador) ====================== */
+async function showUsuarios(){
+  if(!isAdmin()) return;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('nav-usuarios').classList.add('active');
+  document.getElementById('viewGrid').classList.add('hidden');
+  document.getElementById('viewForm').classList.add('hidden');
+  document.getElementById('viewCatalogos').classList.add('hidden');
+  document.getElementById('viewUsuarios').classList.remove('hidden');
+  document.getElementById('usuariosBody').innerHTML='<tr><td colspan="4" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
+  try{ const us=await api('GET','/usuarios'); renderUsuarios(us); }
+  catch(e){ document.getElementById('usuariosBody').innerHTML=`<tr><td colspan="4" style="padding:20px;color:var(--danger)">${esc(e.message)}</td></tr>`; }
+}
+function renderUsuarios(us){
+  const b=document.getElementById('usuariosBody'); b.innerHTML="";
+  if(!us.length){ b.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Sin usuarios registrados todavía.</td></tr>'; return; }
+  us.forEach(u=>{
+    const opts=ALL_ROLES.map(r=>`<option value="${r}"${r===u.rol?' selected':''}>${r}</option>`).join('');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${esc(u.email)}</td><td>${esc(u.nombre)}</td><td>${esc(u.ultimo_acceso)}</td>
+      <td><select onchange="assignRole('${attr(u.email)}',this.value)">${opts}</select></td>`;
+    b.appendChild(tr);
+  });
+}
+async function assignRole(email,rol){
+  try{
+    await api('PUT','/usuarios/'+encodeURIComponent(email),{rol});
+    toast("Rol actualizado: "+email+" → "+rol);
+    // Si el admin cambió su propio rol, reflejarlo en la interfaz.
+    if(email===CUR_EMAIL){ REAL_ROLE=rol; EFF_ROLE=rol; setupRoleUI(); if(!isAdmin()) showGrid(); }
+  }catch(e){ toast("Error: "+e.message); showUsuarios(); }
+}
+
 /* ====================== EXPORTAR A EXCEL ====================== */
 async function exportExcel(){
   const m=M();
@@ -668,6 +810,7 @@ async function exportExcel(){
 
 /* ====================== UTILIDADES ====================== */
 function esc(s){ if(s===undefined||s===null||s==="")return "—"; return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function attr(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 let toastT;
 function toast(msg){ let t=document.querySelector('.toast'); if(t)t.remove(); t=document.createElement('div'); t.className="toast"; t.textContent=msg; document.body.appendChild(t); clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),2800); }
 document.getElementById('optEditInput').addEventListener('keydown',e=>{if(e.key==='Enter')saveOption();});

@@ -104,6 +104,9 @@ CREATE TABLE dbo.Solicitud (
     Usos                  TEXT NULL,
     QuedaPacienteId       INT NULL,
     Materiales            VARCHAR(300) NULL,
+    -- Flujo de trabajo
+    Estado                VARCHAR(20)  NOT NULL DEFAULT 'Pendiente'
+                          CONSTRAINT CK_Solicitud_Estado CHECK (Estado IN ('Pendiente','Procesado')),
     -- Auditoría
     CreadoPor             VARCHAR(200) NULL,
     FechaCreacion         TIMESTAMP(0) NOT NULL DEFAULT (now() at time zone 'utc'),
@@ -139,6 +142,7 @@ SELECT  s.Id,
         fam.Nombre  AS Familia,
         prov.Nombre AS Proveedor,
         pais.Nombre AS PaisOrigen,
+        s.Estado,
         s.FechaCreacion,
         s.CreadoPor
 FROM dbo.Solicitud s

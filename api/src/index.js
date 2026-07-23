@@ -22,6 +22,7 @@ function getUser(request) {
     return {
       id: p.userId,
       name: p.userDetails,
+      email: (p.userDetails || '').trim().toLowerCase(),
       roles: p.userRoles || [],
       provider: p.identityProvider
     };
@@ -29,6 +30,34 @@ function getUser(request) {
     return null;
   }
 }
+
+/* Roles de la aplicación (independientes del SSO). Un usuario nuevo entra como
+   'General'. La identidad la administra Microsoft; aquí solo mapeamos correo -> rol. */
+const ROLES = ['General', 'Compras', 'Administrador'];
+
+// Registra/actualiza al usuario que inició sesión y devuelve su rol de aplicación.
+async function ensureUserRole(user) {
+  if (!user || !user.email) return 'General';
+  await query(
+    `INSERT INTO dbo.UsuarioRol (Email, Nombre, RolId, UltimoAcceso)
+     VALUES ($1, $2, (SELECT Id FROM cat.Rol WHERE Nombre='General'), (now() at time zone 'utc'))
+     ON CONFLICT (Email) DO UPDATE
+        SET Nombre = EXCLUDED.Nombre,
+            UltimoAcceso = (now() at time zone 'utc')`,
+    [user.email, user.name || user.email]
+  );
+  return getRole(user);
+}
+
+// Lee el rol de aplicación del usuario (sin escribir). 'General' si no existe.
+async function getRole(user) {
+  if (!user || !user.email) return 'General';
+  const r = await query(
+    `SELECT rol.Nombre AS rol FROM dbo.UsuarioRol u
+     JOIN cat.Rol rol ON rol.Id = u.RolId WHERE u.Email = $1`, [user.email]);
+  return r.rows.length ? r.rows[0].rol : 'General';
+}
+const puedeEditarEstado = (rol) => rol === 'Compras' || rol === 'Administrador';
 
 /* Catálogos simples: clave usada por el frontend -> tabla física */
 const CAT_TABLES = {
@@ -88,7 +117,8 @@ SELECT s.Id AS id, s.Codigo AS codigo, s.Nombre AS nombre,
        s.Modelo AS modelo, s.Marca AS marca, s.ClasificacionProveedor AS clasif_prov,
        ti.Nombre AS tipo_implante, ei.Nombre AS es_implantable,
        s.DescripcionDetallada AS desc_detallada, s.QueEs AS que_es, s.ParaQue AS para_que,
-       s.Caracteristicas AS caracteristicas, s.Usos AS usos, qp.Nombre AS queda_paciente, s.Materiales AS materiales
+       s.Caracteristicas AS caracteristicas, s.Usos AS usos, qp.Nombre AS queda_paciente, s.Materiales AS materiales,
+       s.Estado AS estado
 FROM dbo.Solicitud s
 LEFT JOIN cat.Departamento dep ON dep.Id=s.DepartamentoId
 LEFT JOIN cat.Linea        lin ON lin.Id=s.LineaId
@@ -157,10 +187,17 @@ function validateRequired(body) {
    ============================================================ */
 app.http('me', {
   methods: ['GET'], authLevel: 'anonymous', route: 'me',
-  handler: async (request) => {
+  handler: async (request, context) => {
     const user = getUser(request);
     if (!user) return json(401, { error: 'No autenticado' });
-    return json(200, user);
+    try {
+      const rol = await ensureUserRole(user);
+      return json(200, { ...user, rol });
+    } catch (e) {
+      context.error(e);
+      // Si falla el registro del rol, el usuario entra igual con rol mínimo.
+      return json(200, { ...user, rol: 'General' });
+    }
   }
 });
 
@@ -302,7 +339,7 @@ app.http('solicitudes-list', {
       const r = await query(
         `SELECT Id AS id, Codigo AS codigo, Nombre AS nombre,
                 Departamento AS departamento, Linea AS linea, Familia AS familia,
-                Proveedor AS proveedor, PaisOrigen AS pais_origen
+                Proveedor AS proveedor, PaisOrigen AS pais_origen, Estado AS estado
          FROM dbo.vSolicitud ORDER BY Id DESC`);
       return json(200, r.rows);
     } catch (e) {
@@ -360,6 +397,11 @@ app.http('solicitud-update', {
       const missing = validateRequired(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
       const vals = await resolveRecord(body);
+      // El Estado solo lo pueden modificar los roles Compras/Administrador.
+      if (body.estado !== undefined && puedeEditarEstado(await getRole(user))) {
+        if (!['Pendiente', 'Procesado'].includes(body.estado)) return json(400, { error: 'Estado inválido' });
+        vals['Estado'] = body.estado;
+      }
       const cols = Object.keys(vals);
       const params = [];
       const sets = [];
@@ -380,6 +422,8 @@ app.http('solicitud-delete', {
   methods: ['DELETE'], authLevel: 'anonymous', route: 'solicitudes/{id}',
   handler: async (request, context) => {
     try {
+      if (!puedeEditarEstado(await getRole(getUser(request))))
+        return json(403, { error: 'No tiene permiso para eliminar registros' });
       await query(`DELETE FROM dbo.Solicitud WHERE Id=$1`, [parseInt(request.params.id, 10)]);
       return json(200, { ok: true });
     } catch (e) {
@@ -421,7 +465,7 @@ SELECT o.Id AS id, p.Nombre AS codigo_producto, o.Descripcion AS descripcion,
        b.Nombre AS bodega, pr.Nombre AS proveedor, tr.Nombre AS transporte, se.Nombre AS sector,
        to_char(o.FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega, o.PrecioEspecial AS precio_especial,
        o.NumeroEMB AS num_emb, to_char(o.FechaVencimientoEMB, 'YYYY-MM-DD') AS fecha_venc_emb,
-       o.Observaciones AS observaciones
+       o.Observaciones AS observaciones, o.Estado AS estado
 FROM dbo.OrdenPedido o
 JOIN cat.OP_Producto  p  ON p.Id=o.ProductoId
 LEFT JOIN cat.OP_Bodega    b  ON b.Id=o.BodegaId
@@ -522,7 +566,8 @@ app.http('ordenes-list', {
       const r = await query(
         `SELECT Id AS id, Producto AS codigo_producto, Descripcion AS descripcion,
                 Cajas AS cajas, TotalUnidades AS total_unidades, Bodega AS bodega,
-                Proveedor AS proveedor, to_char(FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega
+                Proveedor AS proveedor, to_char(FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega,
+                Estado AS estado
          FROM dbo.vOrdenPedido ORDER BY Id DESC`);
       return json(200, r.rows);
     } catch (e) { context.error(e); return json(500, { error: 'Error al listar', detail: e.message }); }
@@ -568,6 +613,11 @@ app.http('orden-update', {
       const missing = ordValidate(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
       const vals = await ordResolve(body);
+      // El Estado solo lo pueden modificar los roles Compras/Administrador.
+      if (body.estado !== undefined && puedeEditarEstado(await getRole(user))) {
+        if (!['Pendiente', 'Procesado'].includes(body.estado)) return json(400, { error: 'Estado inválido' });
+        vals['Estado'] = body.estado;
+      }
       const cols = Object.keys(vals);
       const params = [];
       const sets = [];
@@ -584,8 +634,70 @@ app.http('orden-delete', {
   methods: ['DELETE'], authLevel: 'anonymous', route: 'ordenes/{id}',
   handler: async (request, context) => {
     try {
+      if (!puedeEditarEstado(await getRole(getUser(request))))
+        return json(403, { error: 'No tiene permiso para eliminar registros' });
       await query(`DELETE FROM dbo.OrdenPedido WHERE Id=$1`, [parseInt(request.params.id, 10)]);
       return json(200, { ok: true });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar', detail: e.message }); }
+  }
+});
+
+/* ============================================================
+   MÓDULO: ROLES Y ASIGNACIÓN DE USUARIOS  (solo Administrador)
+   No administra identidades (eso es Microsoft/SSO): solo asigna el rol de la
+   aplicación a los correos que ya han iniciado sesión.
+   ============================================================ */
+
+/* Catálogo de roles disponibles */
+app.http('roles-list', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'roles',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!user) return json(401, { error: 'No autenticado' });
+      const r = await query(`SELECT Nombre AS nombre FROM cat.Rol ORDER BY Id`);
+      return json(200, r.rows.map(x => x.nombre));
+    } catch (e) { context.error(e); return json(500, { error: 'Error al listar roles', detail: e.message }); }
+  }
+});
+
+/* Listado de usuarios que han iniciado sesión, con su rol */
+app.http('usuarios-list', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'usuarios',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!user) return json(401, { error: 'No autenticado' });
+      if ((await getRole(user)) !== 'Administrador')
+        return json(403, { error: 'Solo los administradores pueden ver esta información' });
+      const r = await query(
+        `SELECT u.Email AS email, u.Nombre AS nombre, rol.Nombre AS rol,
+                to_char(u.UltimoAcceso, 'YYYY-MM-DD HH24:MI') AS ultimo_acceso
+         FROM dbo.UsuarioRol u JOIN cat.Rol rol ON rol.Id = u.RolId
+         ORDER BY u.UltimoAcceso DESC NULLS LAST, u.Email`);
+      return json(200, r.rows);
+    } catch (e) { context.error(e); return json(500, { error: 'Error al listar usuarios', detail: e.message }); }
+  }
+});
+
+/* Cambiar el rol de un usuario */
+app.http('usuario-set-rol', {
+  methods: ['PUT'], authLevel: 'anonymous', route: 'usuarios/{email}',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!user) return json(401, { error: 'No autenticado' });
+      if ((await getRole(user)) !== 'Administrador')
+        return json(403, { error: 'Solo los administradores pueden asignar roles' });
+      const email = decodeURIComponent(request.params.email).trim().toLowerCase();
+      const body = await request.json();
+      const rol = (body.rol || '').trim();
+      if (!ROLES.includes(rol)) return json(400, { error: 'Rol inválido' });
+      const r = await query(
+        `UPDATE dbo.UsuarioRol SET RolId = (SELECT Id FROM cat.Rol WHERE Nombre=$1) WHERE Email=$2`,
+        [rol, email]);
+      if (!r.rowCount) return json(404, { error: 'Usuario no encontrado' });
+      return json(200, { ok: true });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo asignar el rol', detail: e.message }); }
   }
 });
