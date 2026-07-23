@@ -149,6 +149,9 @@ thead tr.filter-row input{padding:6px 8px;font-size:12px;border-radius:5px;borde
 .role-box .rlbl{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700}
 .role-badge{display:inline-block;margin-top:4px;background:#e3f2fb;color:var(--brand-d);padding:4px 11px;border-radius:7px;font-weight:700;font-size:12.5px}
 .sim-note{font-size:10.5px;color:var(--warn);margin-top:6px;display:block;line-height:1.3}
+.ro-banner{grid-column:1/-1;background:#fdf0d5;color:#9a6a00;border:1px solid #f0d79a;border-radius:8px;padding:10px 14px;font-weight:600;font-size:13px}
+select:disabled,input:disabled,textarea:disabled{background:#f2f5f7;color:#5b6b76;cursor:not-allowed;opacity:.85}
+button:disabled{opacity:.5;cursor:not-allowed}
 
 </style>
 </head>
@@ -419,6 +422,8 @@ let COL_FILTERS={};                // filtros por columna
 function canDelete(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 function canEditEstado(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 function isAdmin(){ return EFF_ROLE==='Administrador'; }
+// El rol General no puede modificar un registro ya Procesado (solo verlo).
+function recordReadOnly(r){ return EFF_ROLE==='General' && (r&&(r.estado||'Pendiente'))==='Procesado'; }
 
 /* ====================== API ====================== */
 async function api(method, path, body){
@@ -541,9 +546,12 @@ function renderBody(){
       return `<td>${esc(r[c.k])}</td>`;
     }).join('');
     const delBtn = canDelete()? `<button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button>` : '';
+    const ro = recordReadOnly(r);
+    const editBtn = ro
+      ? `<button class="icon-btn edit-btn" title="Ver (procesado · solo lectura)" onclick="openForm(${r.id})">👁️</button>`
+      : `<button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>`;
     const tr=document.createElement('tr');
-    tr.innerHTML=cells+`<td><div class="actions-cell" style="justify-content:flex-end">
-      <button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>${delBtn}</div></td>`;
+    tr.innerHTML=cells+`<td><div class="actions-cell" style="justify-content:flex-end">${editBtn}${delBtn}</div></td>`;
     b.appendChild(tr);
   });
 }
@@ -555,12 +563,19 @@ async function openForm(id){
   editingId=id||null;
   let rec={};
   if(id){ try{ rec=await api('GET', M().api.rec+'/'+id); }catch(e){ toast("No se pudo cargar: "+e.message); return; } }
-  document.getElementById('formTitle').textContent = id? "Editar Registro":"Nuevo Registro";
-  document.getElementById('formSaveBtn').textContent = id? "Actualizar":"Guardar";
-  buildForm(rec||{}); showForm();
+  const ro = !!id && recordReadOnly(rec);   // General viendo un registro Procesado
+  document.getElementById('formTitle').textContent = id? (ro? "Ver Registro":"Editar Registro") : "Nuevo Registro";
+  const sb=document.getElementById('formSaveBtn'); sb.textContent = id? "Actualizar":"Guardar";
+  sb.classList.toggle('hidden', ro);        // sin botón Guardar en solo lectura
+  buildForm(rec||{}, ro); showForm();
 }
-function buildForm(rec){
+function buildForm(rec, readOnly){
   const c=document.getElementById('formFields'); c.innerHTML="";
+  if(readOnly){
+    const n=document.createElement('div'); n.className="ro-banner full";
+    n.textContent="🔒 Registro Procesado — solo lectura. Su rol no puede modificarlo.";
+    c.appendChild(n);
+  }
   M().sections.forEach(sec=>{
     const st=document.createElement('div'); st.className="section-title"; st.textContent=sec.title; c.appendChild(st);
     sec.fields.forEach(f=>{
@@ -582,6 +597,10 @@ function buildForm(rec){
     const sel=document.createElement('select'); sel.id="fld_estado";
     ['Pendiente','Procesado'].forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===(rec.estado||'Pendiente'))op.selected=true;sel.appendChild(op);});
     wrap.appendChild(sel); c.appendChild(wrap);
+  }
+  // Solo lectura: deshabilita todos los controles del formulario (inputs, selects, textareas y el botón ＋).
+  if(readOnly){
+    c.querySelectorAll('input,select,textarea,button').forEach(el=>{ el.disabled=true; });
   }
 }
 function comboWithPlus(f,val){

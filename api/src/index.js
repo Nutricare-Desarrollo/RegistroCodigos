@@ -396,9 +396,16 @@ app.http('solicitud-update', {
       const body = await request.json();
       const missing = validateRequired(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
+      const rol = await getRole(user);
+      // Un registro Procesado solo lo puede editar Compras/Administrador; el rol General queda en solo lectura.
+      if (!puedeEditarEstado(rol)) {
+        const actual = await query(`SELECT Estado AS estado FROM dbo.Solicitud WHERE Id=$1`, [id]);
+        if (actual.rows.length && actual.rows[0].estado === 'Procesado')
+          return json(403, { error: 'El registro está Procesado y no puede ser modificado por su rol' });
+      }
       const vals = await resolveRecord(body);
       // El Estado solo lo pueden modificar los roles Compras/Administrador.
-      if (body.estado !== undefined && puedeEditarEstado(await getRole(user))) {
+      if (body.estado !== undefined && puedeEditarEstado(rol)) {
         if (!['Pendiente', 'Procesado'].includes(body.estado)) return json(400, { error: 'Estado inválido' });
         vals['Estado'] = body.estado;
       }
@@ -612,9 +619,16 @@ app.http('orden-update', {
       const body = await request.json();
       const missing = ordValidate(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
+      const rol = await getRole(user);
+      // Una orden Procesada solo la puede editar Compras/Administrador; el rol General queda en solo lectura.
+      if (!puedeEditarEstado(rol)) {
+        const actual = await query(`SELECT Estado AS estado FROM dbo.OrdenPedido WHERE Id=$1`, [id]);
+        if (actual.rows.length && actual.rows[0].estado === 'Procesado')
+          return json(403, { error: 'La orden está Procesada y no puede ser modificada por su rol' });
+      }
       const vals = await ordResolve(body);
       // El Estado solo lo pueden modificar los roles Compras/Administrador.
-      if (body.estado !== undefined && puedeEditarEstado(await getRole(user))) {
+      if (body.estado !== undefined && puedeEditarEstado(rol)) {
         if (!['Pendiente', 'Procesado'].includes(body.estado)) return json(400, { error: 'Estado inválido' });
         vals['Estado'] = body.estado;
       }
