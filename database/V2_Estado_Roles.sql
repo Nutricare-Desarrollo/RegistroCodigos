@@ -27,14 +27,17 @@ ALTER TABLE dbo.Solicitud
 ALTER TABLE dbo.OrdenPedido
     ADD COLUMN IF NOT EXISTS Estado VARCHAR(20) NOT NULL DEFAULT 'Pendiente';
 
-/* Restringir los valores posibles a 'Pendiente' / 'Procesado' */
+/* Restringir los valores posibles a 'Pendiente' / 'Procesado'.
+   Nota: PostgreSQL guarda los nombres de restricción en minúsculas, por eso el
+   guard compara con lower(conname) (así el script es idempotente y también
+   convive con una instalación nueva donde la restricción ya viene en el script base). */
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CK_Solicitud_Estado') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE lower(conname) = 'ck_solicitud_estado') THEN
         ALTER TABLE dbo.Solicitud
             ADD CONSTRAINT CK_Solicitud_Estado CHECK (Estado IN ('Pendiente','Procesado'));
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CK_OrdenPedido_Estado') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE lower(conname) = 'ck_ordenpedido_estado') THEN
         ALTER TABLE dbo.OrdenPedido
             ADD CONSTRAINT CK_OrdenPedido_Estado CHECK (Estado IN ('Pendiente','Procesado'));
     END IF;
