@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nutricare · Portal de Registros</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 
 :root{
@@ -161,6 +162,20 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .cmb-opt:hover{background:#eef6fb}
 .cmb-opt.sel{background:#e3f2fb;font-weight:600}
 .cmb-empty{padding:10px 11px;color:var(--muted);font-size:12.5px}
+/* Dashboard */
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.dash-card{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:22px}
+.dash-card h3{margin:0 0 4px;font-size:15px;color:var(--brand-d)}
+.dash-card .dsub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+.dash-body{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.dash-legend{flex:1;min-width:130px}
+.leg{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px}
+.leg .dot{width:12px;height:12px;border-radius:3px;flex:0 0 auto}
+.leg b{margin-left:auto;font-size:15px}
+.leg .dot.pend{background:var(--warn)} .leg .dot.proc{background:var(--ok)}
+.dash-total{border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-size:13px;color:var(--muted);display:flex}
+.dash-total b{margin-left:auto;color:var(--txt);font-size:15px}
+.grid-foot{padding:12px 16px;color:var(--muted);font-size:13px;font-weight:600;text-align:right}
 
 </style>
 </head>
@@ -190,7 +205,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
       </div>
       <nav class="nav-wrap">
         <div class="nav-label">Operación</div>
-        <div class="nav-item active" id="nav-codigos" onclick="switchModule('codigos')"><span class="ic">🏷️</span> Creación de Códigos</div>
+        <div class="nav-item active" id="nav-inicio" onclick="showDashboard()"><span class="ic">🏠</span> Inicio</div>
+        <div class="nav-item" id="nav-codigos" onclick="switchModule('codigos')"><span class="ic">🏷️</span> Creación de Códigos</div>
         <div class="nav-item" id="nav-ordenes" onclick="switchModule('ordenes')"><span class="ic">📦</span> Solicitud de Orden de Pedido</div>
         <div class="nav-label">Configuración</div>
         <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
@@ -212,8 +228,19 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
     <!-- CONTENIDO -->
     <main class="content">
+      <!-- DASHBOARD (inicio) -->
+      <section id="viewDashboard" class="hidden">
+        <div class="page-head">
+          <div><h2>Inicio</h2><div class="sub">Resumen de registros por estado</div></div>
+        </div>
+        <div class="dash-grid">
+          <div class="dash-card" id="dashCodigos"></div>
+          <div class="dash-card" id="dashOrdenes"></div>
+        </div>
+      </section>
+
       <!-- GRID -->
-      <section id="viewGrid">
+      <section id="viewGrid" class="hidden">
         <div class="page-head">
           <div>
             <h2 id="pageTitle">Registros</h2>
@@ -236,6 +263,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
             <div class="big">📋</div>
             <div>No hay registros aún. Haga clic en el botón superior para comenzar.</div>
           </div>
+          <div class="grid-foot" id="gridFoot"></div>
         </div>
       </section>
 
@@ -252,6 +280,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
           <div class="form-grid" id="formFields"></div>
           <div class="form-foot">
             <button class="btn-ghost" onclick="showGrid()">Cancelar</button>
+            <button class="btn-ghost hidden" id="formPdfBtn" onclick="downloadFormPDF()">⬇ Descargar PDF</button>
             <button class="btn-primary" id="formSaveBtn" onclick="saveRecord()">Guardar</button>
           </div>
         </div>
@@ -455,7 +484,7 @@ async function init(){
     setupRoleUI();
     document.getElementById('login').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
-    await switchModule('codigos');
+    await showDashboard();
   }catch(e){
     document.getElementById('app').classList.add('hidden');
     document.getElementById('login').classList.remove('hidden');
@@ -501,22 +530,71 @@ async function loadCatalogsFor(id){
 async function loadRecords(){ M().records = await api('GET', M().api.rec); }
 
 /* ====================== NAVEGACIÓN ====================== */
+const VIEWS=['viewDashboard','viewGrid','viewForm','viewCatalogos','viewUsuarios'];
+function showOnly(id){ VIEWS.forEach(v=>document.getElementById(v).classList.toggle('hidden', v!==id)); }
+function setNav(id){ document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); const n=document.getElementById(id); if(n) n.classList.add('active'); }
 async function switchModule(id){
   ACT=id; editingId=null;
   VIEW_ESTADO='Pendiente'; COL_FILTERS={};
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const nav=document.getElementById('nav-'+id); if(nav) nav.classList.add('active');
-  document.getElementById('viewForm').classList.add('hidden');
-  document.getElementById('viewCatalogos').classList.add('hidden');
-  document.getElementById('viewUsuarios').classList.add('hidden');
-  document.getElementById('viewGrid').classList.remove('hidden');
+  setNav('nav-'+id);
+  showOnly('viewGrid');
   try{ await loadCatalogsFor(id); await loadRecords(); }
   catch(e){ toast("Error al cargar datos: "+e.message); }
   renderMain();
 }
-function showGrid(){ document.getElementById('viewForm').classList.add('hidden'); document.getElementById('viewCatalogos').classList.add('hidden'); document.getElementById('viewUsuarios').classList.add('hidden'); document.getElementById('viewGrid').classList.remove('hidden'); }
-function showForm(){ document.getElementById('viewGrid').classList.add('hidden'); document.getElementById('viewCatalogos').classList.add('hidden'); document.getElementById('viewUsuarios').classList.add('hidden'); document.getElementById('viewForm').classList.remove('hidden'); }
+function showGrid(){ showOnly('viewGrid'); }
+function showForm(){ showOnly('viewForm'); }
 function setView(estado){ VIEW_ESTADO=estado; renderMain(); }
+
+/* ====================== DASHBOARD (inicio) ====================== */
+async function showDashboard(){
+  setNav('nav-inicio'); showOnly('viewDashboard');
+  document.getElementById('dashCodigos').innerHTML='<div class="dsub">Cargando…</div>';
+  document.getElementById('dashOrdenes').innerHTML='<div class="dsub">Cargando…</div>';
+  try{
+    const [cod, ord] = await Promise.all([api('GET','/solicitudes'), api('GET','/ordenes')]);
+    renderDashCard('dashCodigos', 'Creación de Códigos', 'Códigos de artículo', cod);
+    renderDashCard('dashOrdenes', 'Solicitud de Orden de Pedido', 'Órdenes de pedido', ord);
+  }catch(e){
+    const msg=`<div class="dsub" style="color:var(--danger)">No se pudo cargar: ${esc(e.message)}</div>`;
+    document.getElementById('dashCodigos').innerHTML=msg; document.getElementById('dashOrdenes').innerHTML='';
+  }
+}
+function countByEstado(records){
+  let pend=0, proc=0;
+  (records||[]).forEach(r=>{ ((r.estado||'Pendiente')==='Procesado'?proc++:pend++); });
+  return {pend, proc, total:pend+proc};
+}
+function donutSVG(pend, proc){
+  const total=pend+proc, r=52, c=2*Math.PI*r, cx=70, cy=70;
+  if(total===0){
+    return `<svg width="140" height="140" viewBox="0 0 140 140" aria-label="Sin registros">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e6edf2" stroke-width="16"/>
+      <text x="${cx}" y="${cy+5}" text-anchor="middle" font-size="13" fill="#6b7d8a">Sin datos</text></svg>`;
+  }
+  const pendLen=c*(pend/total);
+  return `<svg width="140" height="140" viewBox="0 0 140 140" aria-label="Distribución por estado">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e6edf2" stroke-width="16"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--ok)" stroke-width="16"
+      stroke-dasharray="${c}" stroke-dashoffset="0" transform="rotate(-90 ${cx} ${cy})"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--warn)" stroke-width="16"
+      stroke-dasharray="${pendLen} ${c-pendLen}" stroke-dashoffset="0" transform="rotate(-90 ${cx} ${cy})"/>
+    <text x="${cx}" y="${cy-2}" text-anchor="middle" font-size="24" font-weight="800" fill="#1d2b36">${total}</text>
+    <text x="${cx}" y="${cy+16}" text-anchor="middle" font-size="11" fill="#6b7d8a">registros</text></svg>`;
+}
+function renderDashCard(elId, title, subtitle, records){
+  const s=countByEstado(records);
+  document.getElementById(elId).innerHTML=`
+    <h3>${esc(title)}</h3><div class="dsub">${esc(subtitle)}</div>
+    <div class="dash-body">
+      ${donutSVG(s.pend, s.proc)}
+      <div class="dash-legend">
+        <div class="leg"><span class="dot pend"></span> Pendientes <b>${s.pend}</b></div>
+        <div class="leg"><span class="dot proc"></span> Procesados <b>${s.proc}</b></div>
+        <div class="dash-total">Total <b>${s.total}</b></div>
+      </div>
+    </div>`;
+}
 
 /* ====================== GRID ====================== */
 function renderMain(){
@@ -552,6 +630,9 @@ function renderBody(){
   const sinRegistros = m.records.length===0;
   document.getElementById('mainEmpty').classList.toggle('hidden', !sinRegistros);
   document.getElementById('mainTable').classList.toggle('hidden', sinRegistros);
+  const foot=document.getElementById('gridFoot');
+  foot.textContent = rows.length===1 ? '1 registro' : (rows.length+' registros');
+  foot.classList.toggle('hidden', sinRegistros);
   if(sinRegistros) return;
   if(rows.length===0){
     b.innerHTML=`<tr><td colspan="${m.gridCols.length+1}" style="text-align:center;color:var(--muted);padding:28px">No se encontraron registros con los filtros aplicados.</td></tr>`;
@@ -577,15 +658,55 @@ function estadoBadge(e){ const v=e||'Pendiente'; return `<span class="badge ${v=
 function onFilter(k,v){ COL_FILTERS[k]=v; renderBody(); }
 
 /* ====================== FORMULARIO ====================== */
+let CUR_REC={};   // registro actualmente abierto en el formulario (para el PDF)
 async function openForm(id){
   editingId=id||null;
   let rec={};
   if(id){ try{ rec=await api('GET', M().api.rec+'/'+id); }catch(e){ toast("No se pudo cargar: "+e.message); return; } }
+  CUR_REC=rec||{};
   const ro = !!id && recordReadOnly(rec);   // General viendo un registro Procesado
   document.getElementById('formTitle').textContent = id? (ro? "Ver Registro":"Editar Registro") : "Nuevo Registro";
   const sb=document.getElementById('formSaveBtn'); sb.textContent = id? "Actualizar":"Guardar";
   sb.classList.toggle('hidden', ro);        // sin botón Guardar en solo lectura
+  document.getElementById('formPdfBtn').classList.toggle('hidden', !id);  // PDF solo al ver/editar un registro existente
   buildForm(rec||{}, ro); showForm();
+}
+/* Descarga el formulario actual como PDF (jsPDF), agrupado por secciones. */
+function downloadFormPDF(){
+  if(!(window.jspdf && window.jspdf.jsPDF)){ toast("No se pudo cargar la librería PDF"); return; }
+  const doc=new window.jspdf.jsPDF({unit:'pt', format:'a4'});
+  const m=M();
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const margin=48, maxW=pageW-margin*2; let y=margin;
+  const ensure=(h)=>{ if(y+h>pageH-margin){ doc.addPage(); y=margin; } };
+  const getVal=(key)=>{ const el=document.getElementById('fld_'+key); return el&&el.value ? el.value : ''; };
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(7,70,99);
+  doc.text('Corporación Nutricare', margin, y); y+=20;
+  doc.setFontSize(12); doc.setTextColor(60,60,60); doc.text(m.title, margin, y); y+=15;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120);
+  doc.text('Generado: '+new Date().toLocaleString(), margin, y); y+=8;
+  doc.setDrawColor(210,210,210); doc.line(margin,y,pageW-margin,y); y+=18;
+  m.sections.forEach(sec=>{
+    ensure(28);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(10,92,138);
+    doc.text(sec.title, margin, y); y+=15;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(40,40,40);
+    sec.fields.forEach(f=>{
+      const lines=doc.splitTextToSize(f.label+': '+(getVal(f.key)||'—'), maxW);
+      ensure(lines.length*13+2); doc.text(lines, margin, y); y+=lines.length*13+2;
+    });
+    y+=6;
+  });
+  const estado = getVal('estado') || CUR_REC.estado || 'Pendiente';
+  ensure(30);
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(10,92,138);
+  doc.text('Flujo de trabajo', margin, y); y+=15;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(40,40,40);
+  doc.text('Estado: '+estado, margin, y); y+=14;
+  const codeKey = ACT==='codigos' ? 'codigo' : 'codigo_producto';
+  const code = (getVal(codeKey)||'registro').replace(/[^A-Za-z0-9._-]+/g,'');
+  doc.save(m.title.replace(/[^A-Za-z0-9]+/g,'_')+'_'+code+'.pdf');
+  toast('PDF descargado');
 }
 function buildForm(rec, readOnly){
   const c=document.getElementById('formFields'); c.innerHTML="";
@@ -801,11 +922,7 @@ async function deleteOption(idx){
 
 /* ====================== CATÁLOGOS ====================== */
 async function showCatalogos(){
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.getElementById('nav-catalogos').classList.add('active');
-  document.getElementById('viewGrid').classList.add('hidden');
-  document.getElementById('viewForm').classList.add('hidden');
-  document.getElementById('viewCatalogos').classList.remove('hidden');
+  setNav('nav-catalogos'); showOnly('viewCatalogos');
   document.getElementById('catBody').innerHTML='<tr><td colspan="4" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
   try{ for(const id of Object.keys(MODULES)) await loadCatalogsFor(id); }catch(e){ toast("Error: "+e.message); }
   renderCatalogos();
@@ -829,12 +946,7 @@ function manageCat(modId,key){ ACT=modId; openOpt(key, LIST_LABELS[key]||key, nu
 /* ====================== USUARIOS Y ROLES (solo Administrador) ====================== */
 async function showUsuarios(){
   if(!isAdmin()) return;
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.getElementById('nav-usuarios').classList.add('active');
-  document.getElementById('viewGrid').classList.add('hidden');
-  document.getElementById('viewForm').classList.add('hidden');
-  document.getElementById('viewCatalogos').classList.add('hidden');
-  document.getElementById('viewUsuarios').classList.remove('hidden');
+  setNav('nav-usuarios'); showOnly('viewUsuarios');
   document.getElementById('usuariosBody').innerHTML='<tr><td colspan="4" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
   try{ const us=await api('GET','/usuarios'); renderUsuarios(us); }
   catch(e){ document.getElementById('usuariosBody').innerHTML=`<tr><td colspan="4" style="padding:20px;color:var(--danger)">${esc(e.message)}</td></tr>`; }
