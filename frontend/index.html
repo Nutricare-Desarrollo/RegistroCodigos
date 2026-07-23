@@ -152,6 +152,15 @@ thead tr.filter-row input{padding:6px 8px;font-size:12px;border-radius:5px;borde
 .ro-banner{grid-column:1/-1;background:#fdf0d5;color:#9a6a00;border:1px solid #f0d79a;border-radius:8px;padding:10px 14px;font-weight:600;font-size:13px}
 select:disabled,input:disabled,textarea:disabled{background:#f2f5f7;color:#5b6b76;cursor:not-allowed;opacity:.85}
 button:disabled{opacity:.5;cursor:not-allowed}
+/* Combo con búsqueda */
+#viewForm .card{overflow:visible}   /* que el panel del combo no se recorte */
+.cmb{position:relative;flex:1;min-width:0}
+.cmb-input{width:100%}
+.cmb-panel{position:absolute;z-index:60;left:0;right:0;top:calc(100% + 3px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-height:240px;overflow-y:auto}
+.cmb-opt{padding:8px 11px;font-size:13px;cursor:pointer;white-space:normal}
+.cmb-opt:hover{background:#eef6fb}
+.cmb-opt.sel{background:#e3f2fb;font-weight:600}
+.cmb-empty{padding:10px 11px;color:var(--muted);font-size:12.5px}
 
 </style>
 </head>
@@ -537,8 +546,17 @@ function filteredRecords(){
 function renderBody(){
   const m=M(); const rows=filteredRecords();
   const b=document.getElementById('mainBody'); b.innerHTML="";
-  document.getElementById('mainEmpty').classList.toggle('hidden', rows.length>0);
-  document.getElementById('mainTable').classList.toggle('hidden', rows.length===0);
+  // La pantalla de "vacío" (con el ícono) solo aplica cuando el módulo NO tiene ningún registro.
+  // Si hay registros pero el filtro/vista no arroja coincidencias, la tabla y sus filtros
+  // deben seguir visibles y se muestra un mensaje dentro de la tabla.
+  const sinRegistros = m.records.length===0;
+  document.getElementById('mainEmpty').classList.toggle('hidden', !sinRegistros);
+  document.getElementById('mainTable').classList.toggle('hidden', sinRegistros);
+  if(sinRegistros) return;
+  if(rows.length===0){
+    b.innerHTML=`<tr><td colspan="${m.gridCols.length+1}" style="text-align:center;color:var(--muted);padding:28px">No se encontraron registros con los filtros aplicados.</td></tr>`;
+    return;
+  }
   rows.forEach(r=>{
     const cells=m.gridCols.map(c=>{
       if(c.estado) return `<td>${estadoBadge(r.estado)}</td>`;
@@ -603,32 +621,66 @@ function buildForm(rec, readOnly){
     c.querySelectorAll('input,select,textarea,button').forEach(el=>{ el.disabled=true; });
   }
 }
+/* Combo con búsqueda "contiene": un input de texto para buscar/mostrar, un input
+   oculto con id fld_<key> que guarda el valor real (lo lee saveRecord), y un panel
+   de opciones filtradas. Reemplaza al <select> pero mantiene la misma interfaz .value. */
+function makeCombo(id, options, val, cfg){
+  cfg = cfg || {};
+  const wrap=document.createElement('div'); wrap.className="cmb";
+  const hidden=document.createElement('input'); hidden.type="hidden"; hidden.id=id; hidden.value=val||"";
+  const search=document.createElement('input'); search.type="text"; search.className="cmb-input";
+  search.setAttribute('autocomplete','off'); search.placeholder=cfg.placeholder||"-- Seleccione --"; search.value=val||"";
+  const panel=document.createElement('div'); panel.className="cmb-panel hidden";
+  wrap.appendChild(hidden); wrap.appendChild(search); wrap.appendChild(panel);
+  let curOptions=(options||[]).slice();
+  function renderPanel(filter){
+    const fTxt=(filter||"").trim().toLowerCase();
+    const list=curOptions.filter(o=>String(o).toLowerCase().includes(fTxt));
+    panel.innerHTML="";
+    if(!list.length){ const d=document.createElement('div'); d.className="cmb-empty"; d.textContent="Sin coincidencias"; panel.appendChild(d); return; }
+    list.forEach(o=>{
+      const it=document.createElement('div'); it.className="cmb-opt"+(o===hidden.value?" sel":""); it.textContent=o;
+      it.addEventListener('mousedown', e=>{ e.preventDefault(); choose(o); });
+      panel.appendChild(it);
+    });
+  }
+  function open(filter){ if(search.disabled) return; renderPanel(filter||""); panel.classList.remove('hidden'); }
+  function close(){ panel.classList.add('hidden'); }
+  function choose(o){ hidden.value=o; search.value=o; close(); hidden.dispatchEvent(new Event('change')); }
+  search.addEventListener('focus', ()=>{ search.select(); open(""); });     // al abrir: todas las opciones
+  search.addEventListener('input', ()=>{ open(search.value); });            // al escribir: filtra por "contiene"
+  search.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){ search.value=hidden.value||""; close(); search.blur(); }
+    else if(e.key==='Enter'){ e.preventDefault(); const first=panel.querySelector('.cmb-opt'); if(first) choose(first.textContent); }
+  });
+  search.addEventListener('blur', ()=>{ setTimeout(()=>{ search.value=hidden.value||""; close(); },150); });
+  const ctrl={ wrap, hidden, search,
+    setOptions(o){ curOptions=(o||[]).slice(); },
+    getValue(){ return hidden.value; },
+    setValue(v){ hidden.value=v||""; search.value=v||""; }
+  };
+  hidden._combo=ctrl;
+  return ctrl;
+}
 function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
-  const sel=buildSelect("fld_"+f.key, M().lists[f.list]||[], val);
+  const ctrl=makeCombo("fld_"+f.key, M().lists[f.list]||[], val, {placeholder:"-- Seleccione --"});
   const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
   plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
-  row.appendChild(sel); row.appendChild(plus); return row;
-}
-function buildSelect(id,options,val){
-  const sel=document.createElement('select'); sel.id=id;
-  const ph=document.createElement('option'); ph.value=""; ph.textContent="-- Seleccione --"; sel.appendChild(ph);
-  (options||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
-  return sel;
+  row.appendChild(ctrl.wrap); row.appendChild(plus); return row;
 }
 function dependentSelect(f,rec){
   const row=document.createElement('div'); row.className="combo-row";
-  const sel=document.createElement('select'); sel.id="fld_"+f.key;
   const h=M().hier[f.key];
+  const ctrl=makeCombo("fld_"+f.key, [], rec[f.key]||"", {placeholder:"(seleccione el nivel anterior)"});
   const refresh=()=>{
     const parentVal=(document.getElementById('fld_'+h.parent)||{}).value;
     const opts = parentVal && h.map[parentVal] ? h.map[parentVal] : [];
-    const cur=sel.value || rec[f.key] || "";
-    sel.innerHTML="";
-    const ph=document.createElement('option'); ph.value=""; ph.textContent= opts.length?"-- Seleccione --":"(seleccione el nivel anterior)"; sel.appendChild(ph);
-    opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===cur)op.selected=true;sel.appendChild(op);});
+    ctrl.setOptions(opts);
+    if(!opts.includes(ctrl.getValue())) ctrl.setValue("");   // el valor deja de ser válido si cambió el nivel anterior
+    ctrl.search.placeholder = opts.length? "-- Seleccione --" : "(seleccione el nivel anterior)";
   };
-  sel._refresh=refresh;
+  ctrl.hidden._refresh=refresh;
   setTimeout(()=>{
     const parent=document.getElementById('fld_'+h.parent);
     if(parent) parent.addEventListener('change', ()=>{
@@ -639,7 +691,7 @@ function dependentSelect(f,rec){
   },0);
   const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
   plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openDependentOpt(f);
-  row.appendChild(sel); row.appendChild(plus); return row;
+  row.appendChild(ctrl.wrap); row.appendChild(plus); return row;
 }
 
 /* ====================== GUARDAR ====================== */
@@ -716,11 +768,9 @@ async function closeOpt(){
 }
 function refreshTargetSelect(){
   if(!curTargetSelect) return;
-  const sel=document.getElementById(curTargetSelect); if(!sel) return;
-  if(sel._refresh){ sel._refresh(); return; }
-  const val=sel.value, opts=currentOptions();
-  sel.innerHTML='<option value="">-- Seleccione --</option>';
-  (opts||[]).forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===val)op.selected=true;sel.appendChild(op);});
+  const el=document.getElementById(curTargetSelect); if(!el) return;
+  if(el._refresh){ el._refresh(); return; }        // combo dependiente
+  if(el._combo){ el._combo.setOptions(currentOptions()); }  // combo de lista (conserva el valor actual)
 }
 let editOptIdx=null;
 function addOptionRow(){ editOptIdx=null; document.getElementById('optEditTitle').textContent="Nueva Opción"; document.getElementById('optEditInput').value=""; document.getElementById('optEditModal').classList.remove('hidden'); setTimeout(()=>document.getElementById('optEditInput').focus(),50); }
