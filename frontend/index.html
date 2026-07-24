@@ -254,6 +254,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn-ghost" onclick="exportExcel()">⬇ Descargar Excel</button>
+            <button class="btn-ghost" onclick="openImport()">⬆ Subir Excel</button>
             <button class="btn-primary" id="addBtn" onclick="openForm()">＋ Nuevo Registro</button>
           </div>
         </div>
@@ -345,6 +346,29 @@ button:disabled{opacity:.5;cursor:not-allowed}
       <button class="btn-primary" onclick="saveOption()">Guardar</button></div>
   </div>
 </div>
+
+<!-- ===== MODAL: subir Excel (carga masiva) ===== -->
+<div id="importModal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head"><h3 id="importTitle">Subir Excel</h3><button class="x" onclick="closeImport()">×</button></div>
+    <div class="modal-body">
+      <div id="importIntro">
+        <p style="margin-top:0">El archivo debe tener los <b>mismos encabezados de columna</b> que la descarga a Excel (primera fila). Las columnas que no coincidan se ignoran.</p>
+        <p>Los valores de las listas (Departamento, Proveedor, etc.) <b>deben existir en los catálogos</b>; si no, esa fila se marcará con error y podrás corregirla. Descarga la plantilla para partir del formato correcto.</p>
+      </div>
+      <div id="importProgress" class="hidden" style="text-align:center;padding:16px">
+        <div style="font-size:32px">⏳</div><p id="importProgTxt" style="color:var(--muted)"></p>
+      </div>
+      <div id="importResults" class="hidden"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="importTemplBtn" onclick="downloadTemplate()">⬇ Descargar plantilla</button>
+      <button class="btn-primary" id="importChooseBtn" onclick="document.getElementById('importFile').click()">Seleccionar archivo…</button>
+      <button class="btn-no hidden" id="importCloseBtn" onclick="closeImport()">Cerrar</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="importFile" accept=".xlsx,.xls" class="hidden" onchange="onImportFile(this)">
 
 <!-- ===== MODAL: confirmar eliminación ===== -->
 <div id="confirmModal" class="overlay hidden">
@@ -1055,6 +1079,99 @@ async function exportExcel(){
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Registros");
   XLSX.writeFile(wb, `${m.title.replace(/[^A-Za-z0-9]+/g,'_')}_${VIEW_ESTADO}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast("Excel descargado ("+rows.length+" registro(s))");
+}
+
+/* ====================== IMPORTAR DESDE EXCEL (carga masiva) ====================== */
+// Encabezado (etiqueta) -> clave del campo, en minúsculas y sin espacios extra.
+function importHeaderMap(){ const map={}; allFields().forEach(f=>{ map[f.label.trim().toLowerCase()]=f.key; }); return map; }
+function fmtXlsxDate(d){ const p=n=>String(n).padStart(2,'0'); return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate()); }
+function buildImportPayload(row, headerMap){
+  const p={};
+  Object.keys(row).forEach(h=>{
+    const key=headerMap[String(h).trim().toLowerCase()]; if(!key) return;
+    let v=row[h];
+    if(v && Object.prototype.toString.call(v)==='[object Date]') v=fmtXlsxDate(v);
+    else v=(v===null||v===undefined)?'':String(v).trim();
+    p[key]=v;
+  });
+  return p;
+}
+function openImport(){
+  document.getElementById('importTitle').textContent="Subir Excel · "+M().title;
+  document.getElementById('importIntro').classList.remove('hidden');
+  document.getElementById('importProgress').classList.add('hidden');
+  document.getElementById('importResults').classList.add('hidden');
+  document.getElementById('importResults').innerHTML="";
+  document.getElementById('importTemplBtn').classList.remove('hidden');
+  document.getElementById('importChooseBtn').classList.remove('hidden');
+  document.getElementById('importCloseBtn').classList.add('hidden');
+  document.getElementById('importModal').classList.remove('hidden');
+}
+function closeImport(){ document.getElementById('importModal').classList.add('hidden'); document.getElementById('importFile').value=""; }
+function downloadTemplate(){
+  if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); return; }
+  const headers=allFields().map(f=>f.label);
+  const ws=XLSX.utils.aoa_to_sheet([headers]);
+  ws['!cols']=headers.map(h=>({wch:Math.min(Math.max(h.length+2,12),40)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Plantilla");
+  XLSX.writeFile(wb, `Plantilla_${M().title.replace(/[^A-Za-z0-9]+/g,'_')}.xlsx`);
+}
+function setImportProgress(done,total){ document.getElementById('importProgTxt').textContent=`Procesando ${done} de ${total} registro(s)…`; }
+async function runImport(rows){
+  const m=M(); const headerMap=importHeaderMap();
+  const results=[]; let ok=0, vacias=0;
+  for(let i=0;i<rows.length;i++){
+    const payload=buildImportPayload(rows[i], headerMap);
+    if(Object.values(payload).every(v=>v==='')){ vacias++; setImportProgress(i+1,rows.length); continue; }
+    try{ await api('POST', m.api.rec, payload); ok++; }
+    catch(e){ results.push({fila:i+2, error:e.message}); }   // +2: encabezado + base 1
+    setImportProgress(i+1,rows.length);
+  }
+  return {ok, errores:results, vacias, total:rows.length};
+}
+async function onImportFile(input){
+  const file=input.files&&input.files[0]; if(!file) return;
+  if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); input.value=""; return; }
+  let rows;
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(new Uint8Array(buf), {type:'array', cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    rows=XLSX.utils.sheet_to_json(ws, {defval:''});
+  }catch(e){ toast("Error al leer el archivo: "+e.message); input.value=""; return; }
+  input.value="";
+  if(!rows.length){ toast("El archivo no tiene filas de datos"); return; }
+  const headerMap=importHeaderMap();
+  const anyMatch=Object.keys(rows[0]).some(h=>headerMap[String(h).trim().toLowerCase()]);
+  if(!anyMatch){ toast("Ninguna columna coincide con el formulario. Usa la plantilla."); return; }
+  // Ejecutar la carga
+  document.getElementById('importIntro').classList.add('hidden');
+  document.getElementById('importTemplBtn').classList.add('hidden');
+  document.getElementById('importChooseBtn').classList.add('hidden');
+  document.getElementById('importProgress').classList.remove('hidden');
+  const res=await runImport(rows);
+  document.getElementById('importProgress').classList.add('hidden');
+  showImportResults(res);
+  try{ await loadRecords(); renderMain(); }catch(e){}
+}
+function showImportResults(res){
+  const box=document.getElementById('importResults');
+  const nErr=res.errores.length;
+  let html=`<div style="margin-bottom:10px">
+      <div style="font-size:14px"><b style="color:var(--ok)">✔ ${res.ok}</b> registro(s) creado(s).</div>
+      ${nErr?`<div style="font-size:14px"><b style="color:var(--danger)">✘ ${nErr}</b> con error.</div>`:''}
+      ${res.vacias?`<div style="font-size:12.5px;color:var(--muted)">${res.vacias} fila(s) vacía(s) omitida(s).</div>`:''}
+    </div>`;
+  if(nErr){
+    html+=`<div class="tbl-wrap card" style="box-shadow:none;border:1px solid var(--line);max-height:260px;overflow:auto">
+      <table><thead><tr><th style="width:70px">Fila</th><th>Motivo</th></tr></thead><tbody>`;
+    res.errores.forEach(e=>{ html+=`<tr><td>${e.fila}</td><td style="white-space:normal">${esc(e.error)}</td></tr>`; });
+    html+=`</tbody></table></div>
+      <p style="font-size:12.5px;color:var(--muted);margin-bottom:0">Corrige esas filas en el Excel y vuelve a subir solo las que fallaron.</p>`;
+  }
+  box.innerHTML=html; box.classList.remove('hidden');
+  document.getElementById('importCloseBtn').classList.remove('hidden');
+  toast(`Carga finalizada: ${res.ok} creado(s)${nErr?`, ${nErr} con error`:''}`);
 }
 
 /* ====================== UTILIDADES ====================== */
