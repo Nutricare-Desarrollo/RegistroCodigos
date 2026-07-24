@@ -284,6 +284,7 @@ app.http('catalogo-add', {
   methods: ['POST'], authLevel: 'anonymous', route: 'catalogos/{tipo}',
   handler: async (request, context) => {
     try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const tipo = request.params.tipo;
       const body = await request.json();
       const valor = (body.valor || '').trim();
@@ -314,6 +315,7 @@ app.http('catalogo-edit', {
   methods: ['PUT'], authLevel: 'anonymous', route: 'catalogos/{tipo}/{valor}',
   handler: async (request, context) => {
     try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const tipo = request.params.tipo;
       const actual = decodeURIComponent(request.params.valor);
       const body = await request.json();
@@ -338,6 +340,7 @@ app.http('catalogo-delete', {
   methods: ['DELETE'], authLevel: 'anonymous', route: 'catalogos/{tipo}/{valor}',
   handler: async (request, context) => {
     try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const tipo = request.params.tipo;
       const valor = decodeURIComponent(request.params.valor);
       let table;
@@ -541,6 +544,7 @@ app.http('catalogos-ordenes-add', {
   methods: ['POST'], authLevel: 'anonymous', route: 'catalogos-ordenes/{tipo}',
   handler: async (request, context) => {
     try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const t = ORD_CAT[request.params.tipo];
       if (!t) return json(400, { error: 'Catálogo desconocido' });
       const body = await request.json();
@@ -559,6 +563,7 @@ app.http('catalogos-ordenes-edit', {
   methods: ['PUT'], authLevel: 'anonymous', route: 'catalogos-ordenes/{tipo}/{valor}',
   handler: async (request, context) => {
     try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const t = ORD_CAT[request.params.tipo];
       if (!t) return json(400, { error: 'Catálogo desconocido' });
       const actual = decodeURIComponent(request.params.valor);
@@ -578,6 +583,7 @@ app.http('catalogos-ordenes-delete', {
   methods: ['DELETE'], authLevel: 'anonymous', route: 'catalogos-ordenes/{tipo}/{valor}',
   handler: async (request, context) => {
     try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const t = ORD_CAT[request.params.tipo];
       if (!t) return json(400, { error: 'Catálogo desconocido' });
       const valor = decodeURIComponent(request.params.valor);

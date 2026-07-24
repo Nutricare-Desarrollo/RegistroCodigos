@@ -323,7 +323,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
     <div class="modal-head"><h3 id="optTitle">Opciones</h3><button class="x" onclick="closeOpt()">×</button></div>
     <div class="modal-body">
       <div class="opt-toolbar"><h4 id="optHint">Listado de opciones disponibles</h4>
-        <button class="btn-plus" title="Agregar nueva opción" onclick="addOptionRow()">＋</button></div>
+        <button class="btn-plus" id="optAddBtn" title="Agregar nueva opción" onclick="addOptionRow()">＋</button></div>
       <div class="tbl-wrap card" style="box-shadow:none;border:1px solid var(--line)">
         <table><thead><tr><th>Opción</th><th style="width:150px;text-align:right">Acciones</th></tr></thead>
         <tbody id="optBody"></tbody></table>
@@ -401,11 +401,11 @@ const MODULES = {
         {key:"fecha_venc", label:"Fecha de Vencimiento del EMB", type:"date"},
       ]},
       {title:"Procesos Estadísticos", fields:[
-        {key:"modelo", label:"Modelo", type:"text"},
-        {key:"marca", label:"Marca", type:"text"},
+        {key:"modelo", label:"Modelo", type:"text", ph:"Si aplica"},
+        {key:"marca", label:"Marca", type:"text", ph:"Si aplica"},
       ]},
       {title:"Procesos de Calidad", fields:[
-        {key:"clasif_prov", label:"Clasificación Proveedor", type:"text"},
+        {key:"clasif_prov", label:"Clasificación Proveedor", type:"text", ph:"Si aplica"},
         {key:"tipo_implante", label:"Tipo Implante", type:"list", list:"tipo_implante"},
         {key:"es_implantable", label:"¿Es Implantable?", type:"list", list:"es_implantable"},
       ]},
@@ -465,6 +465,8 @@ let VIEW_ESTADO='Pendiente';       // pestaña activa: 'Pendiente' | 'Procesado'
 let COL_FILTERS={};                // filtros por columna
 function canDelete(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 function canEditEstado(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
+// Solo Compras/Administrador pueden agregar/editar/eliminar opciones de las listas desplegables.
+function canManageCat(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 function isAdmin(){ return EFF_ROLE==='Administrador'; }
 // El rol General no puede modificar un registro ya Procesado (solo verlo).
 function recordReadOnly(r){ return EFF_ROLE==='General' && (r&&(r.estado||'Pendiente'))==='Procesado'; }
@@ -738,7 +740,7 @@ function buildForm(rec, readOnly){
       if(f.type==="list") wrap.appendChild(comboWithPlus(f,val));
       else if(f.type==="dependent") wrap.appendChild(dependentSelect(f,rec));
       else if(f.type==="textarea"){ const t=document.createElement('textarea');t.rows=3;t.id="fld_"+f.key;t.value=val;wrap.appendChild(t); }
-      else { const i=document.createElement('input'); i.type=f.type==="number"?"number":f.type==="date"?"date":"text"; i.id="fld_"+f.key; i.value=val; wrap.appendChild(i); }
+      else { const i=document.createElement('input'); i.type=f.type==="number"?"number":f.type==="date"?"date":"text"; i.id="fld_"+f.key; i.value=val; if(f.ph) i.placeholder=f.ph; wrap.appendChild(i); }
       c.appendChild(wrap);
     });
   });
@@ -800,9 +802,13 @@ function makeCombo(id, options, val, cfg){
 function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
   const ctrl=makeCombo("fld_"+f.key, M().lists[f.list]||[], val, {placeholder:"-- Seleccione --"});
-  const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
-  plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
-  row.appendChild(ctrl.wrap); row.appendChild(plus); return row;
+  row.appendChild(ctrl.wrap);
+  if(canManageCat()){
+    const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
+    plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
+    row.appendChild(plus);
+  }
+  return row;
 }
 function dependentSelect(f,rec){
   const row=document.createElement('div'); row.className="combo-row";
@@ -824,9 +830,13 @@ function dependentSelect(f,rec){
     });
     refresh();
   },0);
-  const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
-  plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openDependentOpt(f);
-  row.appendChild(ctrl.wrap); row.appendChild(plus); return row;
+  row.appendChild(ctrl.wrap);
+  if(canManageCat()){
+    const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
+    plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openDependentOpt(f);
+    row.appendChild(plus);
+  }
+  return row;
 }
 
 /* ====================== GUARDAR ====================== */
@@ -884,14 +894,18 @@ function currentOptions(){
 }
 function currentTipo(){ if(curDependent) return curDependent.fieldKey==="linea"?"lineas":"familias"; return curListKey; }
 function renderOpt(){
+  const manage=canManageCat();
+  const addBtn=document.getElementById('optAddBtn'); if(addBtn) addBtn.classList.toggle('hidden', !manage);
   const opts=currentOptions(); const b=document.getElementById('optBody'); b.innerHTML="";
-  if(!opts.length){ b.innerHTML=`<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:24px">Sin opciones. Use ＋ para agregar.</td></tr>`; return; }
+  if(!opts.length){ b.innerHTML=`<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:24px">Sin opciones.${manage?' Use ＋ para agregar.':''}</td></tr>`; return; }
   opts.forEach((o,idx)=>{
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${esc(o)}</td>
-      <td style="text-align:right"><div class="actions-cell" style="justify-content:flex-end">
+    const acciones = manage
+      ? `<div class="actions-cell" style="justify-content:flex-end">
       <button class="icon-btn edit-btn" title="Editar" onclick="editOption(${idx})">✏️</button>
-      <button class="icon-btn del-btn" title="Eliminar" onclick="deleteOption(${idx})">🗑️</button></div></td>`;
+      <button class="icon-btn del-btn" title="Eliminar" onclick="deleteOption(${idx})">🗑️</button></div>`
+      : '';
+    tr.innerHTML=`<td>${esc(o)}</td><td style="text-align:right">${acciones}</td>`;
     b.appendChild(tr);
   });
 }
@@ -988,18 +1002,20 @@ async function assignRole(email,rol){
 /* ====================== EXPORTAR A EXCEL ====================== */
 async function exportExcel(){
   const m=M();
-  if(!m.records.length){ toast("No hay registros para exportar"); return; }
+  // Exporta solo lo que se ve en el grid: pestaña activa (Pendiente/Procesado) + filtros por columna.
+  const visibles=filteredRecords();
+  if(!visibles.length){ toast("No hay registros para exportar con los filtros aplicados"); return; }
   if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); return; }
   toast("Preparando Excel...");
   let full;
-  try{ full=await Promise.all(m.records.map(r=>api('GET', m.api.rec+'/'+r.id))); }
+  try{ full=await Promise.all(visibles.map(r=>api('GET', m.api.rec+'/'+r.id))); }
   catch(e){ toast("Error al exportar: "+e.message); return; }
   const fields=allFields(); const headers=fields.map(f=>f.label);
   const rows=full.map(r=>{ const o={}; fields.forEach(f=>{ o[f.label]=(r[f.key]==null)?"":r[f.key]; }); return o; });
   const ws=XLSX.utils.json_to_sheet(rows,{header:headers});
   ws['!cols']=headers.map(h=>{ let mx=h.length; rows.forEach(r=>{const v=String(r[h]||"");if(v.length>mx)mx=v.length;}); return {wch:Math.min(Math.max(mx+2,12),55)}; });
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Registros");
-  XLSX.writeFile(wb, `${m.title.replace(/[^A-Za-z0-9]+/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `${m.title.replace(/[^A-Za-z0-9]+/g,'_')}_${VIEW_ESTADO}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast("Excel descargado ("+rows.length+" registro(s))");
 }
 
