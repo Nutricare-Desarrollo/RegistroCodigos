@@ -58,6 +58,11 @@ async function getRole(user) {
   return r.rows.length ? r.rows[0].rol : 'General';
 }
 const puedeEditarEstado = (rol) => rol === 'Compras' || rol === 'Administrador';
+// Solo Compras y Administrador pueden mantener (agregar/editar/eliminar) las listas desplegables.
+const puedeEditarCatalogos = (rol) => rol === 'Compras' || rol === 'Administrador';
+async function requireCatalogo(request) {
+  return puedeEditarCatalogos(await getRole(getUser(request)));
+}
 
 /* Catálogos simples: clave usada por el frontend -> tabla física */
 const CAT_TABLES = {
@@ -211,9 +216,22 @@ app.http('catalogos', {
       const one = async (table) => (await query(
         `SELECT Nombre FROM ${table} WHERE Activo=true ORDER BY Nombre`)).rows.map(r => r.nombre);
 
-      const [grupo_articulo, centro_costo, unidades, empaque, tipo_implante,
+      // Unidades ordenadas por Orden (Caja y Unidad de primero), luego alfabético.
+      const unidades = (await query(
+        `SELECT Nombre FROM cat.Unidad WHERE Activo=true ORDER BY Orden NULLS LAST, Nombre`)).rows.map(r => r.nombre);
+
+      // Grupo de artículo con su departamento y centro de costo relacionados.
+      const grupos = (await query(
+        `SELECT g.Nombre AS nombre, d.Nombre AS dep, c.Nombre AS centro
+         FROM cat.GrupoArticulo g
+         LEFT JOIN cat.Departamento d ON d.Id = g.DepartamentoId
+         LEFT JOIN cat.CentroCosto  c ON c.Id = g.CentroCostoId
+         WHERE g.Activo=true ORDER BY g.Nombre`)).rows;
+      const grupo_articulo = grupos.map(g => g.nombre);
+
+      const [centro_costo, empaque, tipo_implante,
              origen, proveedores, sino] = await Promise.all([
-        one('cat.GrupoArticulo'), one('cat.CentroCosto'), one('cat.Unidad'),
+        one('cat.CentroCosto'),
         one('cat.Empaque'), one('cat.TipoImplante'), one('cat.PaisOrigen'),
         one('cat.Proveedor'), one('cat.OpcionSiNo')
       ]);
@@ -234,10 +252,18 @@ app.http('catalogos', {
       lineas.forEach(l => familiasMap[l.nombre] = []);
       familias.forEach(f => { (familiasMap[f.lin] = familiasMap[f.lin] || []).push(f.nombre); });
 
+      // Grupo de artículo por departamento + mapa grupo -> centro de costo.
+      const grupo_by_dept = {};
+      deps.forEach(d => grupo_by_dept[d.nombre] = []);
+      grupos.forEach(g => { if (g.dep) (grupo_by_dept[g.dep] = grupo_by_dept[g.dep] || []).push(g.nombre); });
+      const grupo_centro = {};
+      grupos.forEach(g => { if (g.centro) grupo_centro[g.nombre] = g.centro; });
+
       return json(200, {
         departamentos: deps.map(d => d.nombre),
         dept_lines, familias: familiasMap,
-        grupo_articulo, centro_costo, unidades, empaque, tipo_implante,
+        grupo_articulo, grupo_by_dept, grupo_centro,
+        centro_costo, unidades, empaque, tipo_implante,
         origen, proveedores, lote: sino, es_implantable: sino
       });
     } catch (e) {
