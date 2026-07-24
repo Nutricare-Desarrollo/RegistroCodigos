@@ -454,7 +454,8 @@ const MODULES = {
     gridCols:[
       {k:"codigo_producto",l:"Código",tag:true},{k:"descripcion",l:"Descripción"},
       {k:"cajas",l:"Cajas"},{k:"total_unidades",l:"Total Unid."},
-      {k:"bodega",l:"Bodega"},{k:"proveedor",l:"Proveedor"},{k:"fecha_entrega",l:"Fecha entrega"},{k:"estado",l:"Estado",estado:true}
+      {k:"bodega",l:"Bodega"},{k:"proveedor",l:"Proveedor"},{k:"fecha_entrega",l:"Fecha entrega"},
+      {k:"fecha_creacion",l:"Fecha de creación",dateRange:true},{k:"estado",l:"Estado",estado:true}
     ],
     sections:[{title:"Solicitud de Orden de Pedido", fields:[
       {key:"codigo_producto", label:"Código del Producto", type:"list", list:"productos", req:true},
@@ -541,12 +542,15 @@ function onRoleSim(){
   EFF_ROLE=document.getElementById('roleSim').value;
   document.getElementById('roleBadge').textContent=EFF_ROLE;
   applyRoleVisibility();
-  // Si el admin deja de simular Administrador y estaba en Usuarios, vuelve al listado.
+  // Si el rol simulado pierde acceso a una vista abierta, vuelve al listado.
   if(!isAdmin() && !document.getElementById('viewUsuarios').classList.contains('hidden')) showGrid();
+  if(!canManageCat() && !document.getElementById('viewCatalogos').classList.contains('hidden')) showGrid();
   renderMain();
 }
 function applyRoleVisibility(){
   document.getElementById('nav-usuarios').classList.toggle('hidden', !isAdmin());
+  // Catálogos: visible solo para Compras y Administrador.
+  document.getElementById('nav-catalogos').classList.toggle('hidden', !canManageCat());
 }
 
 /* ====================== CARGA DE DATOS ====================== */
@@ -666,8 +670,8 @@ function filteredRecords(){
     if((r.estado||'Pendiente')!==VIEW_ESTADO) return false;
     return Object.keys(COL_FILTERS).every(k=>{
       const flt=COL_FILTERS[k];
-      if(flt && typeof flt==='object'){          // filtro por rango de fechas (YYYY-MM-DD)
-        const v=r[k]==null?'':String(r[k]);
+      if(flt && typeof flt==='object'){          // filtro por rango de fechas (compara solo YYYY-MM-DD, ignora la hora)
+        const v=(r[k]==null?'':String(r[k])).slice(0,10);
         if(flt.from && v < flt.from) return false;
         if(flt.to   && v > flt.to)   return false;
         return true;
@@ -1012,6 +1016,7 @@ async function deleteOption(idx){
 
 /* ====================== CATÁLOGOS ====================== */
 async function showCatalogos(){
+  if(!canManageCat()) return;   // solo Compras/Administrador
   setNav('nav-catalogos'); showOnly('viewCatalogos');
   document.getElementById('catBody').innerHTML='<tr><td colspan="4" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
   try{ for(const id of Object.keys(MODULES)) await loadCatalogsFor(id); }catch(e){ toast("Error: "+e.message); }

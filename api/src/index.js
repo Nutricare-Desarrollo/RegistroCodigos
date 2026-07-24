@@ -373,7 +373,7 @@ app.http('solicitudes-list', {
         `SELECT Id AS id, Codigo AS codigo, Nombre AS nombre,
                 Departamento AS departamento, Linea AS linea, Familia AS familia,
                 Proveedor AS proveedor, PaisOrigen AS pais_origen,
-                to_char(FechaCreacion, 'YYYY-MM-DD') AS fecha_creacion, Estado AS estado
+                to_char((FechaCreacion AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha_creacion, Estado AS estado
          FROM dbo.vSolicitud ORDER BY Id DESC`);
       return json(200, r.rows);
     } catch (e) {
@@ -611,6 +611,7 @@ app.http('ordenes-list', {
         `SELECT Id AS id, Producto AS codigo_producto, Descripcion AS descripcion,
                 Cajas AS cajas, TotalUnidades AS total_unidades, Bodega AS bodega,
                 Proveedor AS proveedor, to_char(FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega,
+                to_char((FechaCreacion AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha_creacion,
                 Estado AS estado
          FROM dbo.vOrdenPedido ORDER BY Id DESC`);
       return json(200, r.rows);
