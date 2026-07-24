@@ -297,6 +297,10 @@ app.http('catalogo-add', {
         const dId = await depId(body.parentDept);
         const lId = await lineaId(body.parent, dId);
         await query(`INSERT INTO cat.Familia (LineaId, Nombre) VALUES ($1, $2)`, [lId, valor]);
+      } else if (tipo === 'grupo_articulo') {
+        // Grupo de artículo ligado al Departamento (para el desplegable dependiente).
+        const dId = body.parent ? await depId(body.parent) : null;
+        await query(`INSERT INTO cat.GrupoArticulo (Nombre, DepartamentoId) VALUES ($1, $2)`, [valor, dId]);
       } else if (CAT_TABLES[tipo]) {
         await query(`INSERT INTO ${CAT_TABLES[tipo]} (Nombre) VALUES ($1)`, [valor]);
       } else {
@@ -368,7 +372,8 @@ app.http('solicitudes-list', {
       const r = await query(
         `SELECT Id AS id, Codigo AS codigo, Nombre AS nombre,
                 Departamento AS departamento, Linea AS linea, Familia AS familia,
-                Proveedor AS proveedor, PaisOrigen AS pais_origen, Estado AS estado
+                Proveedor AS proveedor, PaisOrigen AS pais_origen,
+                to_char(FechaCreacion, 'YYYY-MM-DD') AS fecha_creacion, Estado AS estado
          FROM dbo.vSolicitud ORDER BY Id DESC`);
       return json(200, r.rows);
     } catch (e) {

@@ -370,7 +370,8 @@ const MODULES = {
     gridCols:[
       {k:"codigo",l:"Código",tag:true},{k:"nombre",l:"Nombre del Producto"},
       {k:"departamento",l:"Departamento"},{k:"linea",l:"Línea"},{k:"familia",l:"Familia"},
-      {k:"proveedor",l:"Proveedor"},{k:"pais_origen",l:"País Origen"},{k:"estado",l:"Estado",estado:true}
+      {k:"proveedor",l:"Proveedor"},{k:"pais_origen",l:"País Origen"},
+      {k:"fecha_creacion",l:"Fecha de creación",dateRange:true},{k:"estado",l:"Estado",estado:true}
     ],
     sections:[
       {title:"Información de Producto", fields:[
@@ -381,7 +382,7 @@ const MODULES = {
         {key:"departamento", label:"Departamento", type:"list", list:"departamentos", req:true},
         {key:"linea", label:"Línea", type:"dependent", dependsOn:"departamento", req:true},
         {key:"familia", label:"Familia", type:"dependent", dependsOn:"linea", req:true},
-        {key:"grupo_articulo", label:"Grupo Artículo", type:"list", list:"grupo_articulo"},
+        {key:"grupo_articulo", label:"Grupo Artículo", type:"dependent", dependsOn:"departamento"},
         {key:"centro_costo", label:"Centro de Costo", type:"list", list:"centro_costo"},
       ]},
       {title:"Procesos de Almacenamiento e Inventarios", fields:[
@@ -529,7 +530,8 @@ async function loadCatalogsFor(id){
   const m=MODULES[id]; const c=await api('GET', m.api.cat);
   if(id==='codigos'){
     m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable};
-    m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}};
+    m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}};
+    m.grupoCentro=c.grupo_centro||{};
   } else {
     m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector};
     m.hier={};
@@ -622,9 +624,16 @@ function renderMain(){
   document.getElementById('tabProc').classList.toggle('active',VIEW_ESTADO==='Procesado');
   // Encabezados + fila de filtros por columna (la columna Estado no lleva filtro: se filtra con las pestañas)
   const headCols=m.gridCols.map(c=>`<th>${c.l}</th>`).join('')+'<th style="text-align:right">Acciones</th>';
-  const filterCols=m.gridCols.map(c=> c.estado? '<th></th>'
-      : `<th><input type="text" placeholder="Filtrar…" oninput="onFilter('${c.k}',this.value)" value="${attr(COL_FILTERS[c.k])}"></th>`
-    ).join('')+'<th></th>';
+  const filterCols=m.gridCols.map(c=>{
+    if(c.estado) return '<th></th>';
+    if(c.dateRange){
+      const f=(COL_FILTERS[c.k]&&typeof COL_FILTERS[c.k]==='object')?COL_FILTERS[c.k]:{};
+      return `<th><div style="display:flex;gap:4px">`
+        +`<input type="date" title="Desde" onchange="onDateFilter('${c.k}','from',this.value)" value="${attr(f.from)}">`
+        +`<input type="date" title="Hasta" onchange="onDateFilter('${c.k}','to',this.value)" value="${attr(f.to)}"></div></th>`;
+    }
+    return `<th><input type="text" placeholder="Filtrar…" oninput="onFilter('${c.k}',this.value)" value="${attr(COL_FILTERS[c.k])}"></th>`;
+  }).join('')+'<th></th>';
   document.getElementById('mainHead').innerHTML=`<tr>${headCols}</tr><tr class="filter-row">${filterCols}</tr>`;
   renderBody();
 }
@@ -632,7 +641,14 @@ function filteredRecords(){
   return M().records.filter(r=>{
     if((r.estado||'Pendiente')!==VIEW_ESTADO) return false;
     return Object.keys(COL_FILTERS).every(k=>{
-      const f=(COL_FILTERS[k]||'').trim().toLowerCase(); if(!f) return true;
+      const flt=COL_FILTERS[k];
+      if(flt && typeof flt==='object'){          // filtro por rango de fechas (YYYY-MM-DD)
+        const v=r[k]==null?'':String(r[k]);
+        if(flt.from && v < flt.from) return false;
+        if(flt.to   && v > flt.to)   return false;
+        return true;
+      }
+      const f=(flt||'').trim().toLowerCase(); if(!f) return true;
       return String(r[k]==null?'':r[k]).toLowerCase().includes(f);
     });
   });
@@ -672,13 +688,26 @@ function renderBody(){
 }
 function estadoBadge(e){ const v=e||'Pendiente'; return `<span class="badge ${v==='Procesado'?'badge-proc':'badge-pend'}">${esc(v)}</span>`; }
 function onFilter(k,v){ COL_FILTERS[k]=v; renderBody(); }
+function onDateFilter(k,which,val){
+  const cur=(COL_FILTERS[k]&&typeof COL_FILTERS[k]==='object')?COL_FILTERS[k]:{};
+  cur[which]=val;
+  if(!cur.from && !cur.to) delete COL_FILTERS[k]; else COL_FILTERS[k]=cur;
+  renderBody();
+}
 
 /* ====================== FORMULARIO ====================== */
 let CUR_REC={};   // registro actualmente abierto en el formulario (para el PDF)
+/* Órdenes: al guardar se cachean estos campos; al crear una nueva orden se precargan
+   (no al editar). Persistente entre recargas vía localStorage. */
+const ORD_CACHE_FIELDS=['proveedor','transporte','sector','fecha_entrega'];
+function ordCacheLoad(){ try{ return JSON.parse(localStorage.getItem('ord_defaults')||'{}')||{}; }catch{ return {}; } }
+function ordCacheSave(rec){ try{ const o={}; ORD_CACHE_FIELDS.forEach(k=>o[k]=rec[k]||''); localStorage.setItem('ord_defaults', JSON.stringify(o)); }catch{} }
 async function openForm(id){
   editingId=id||null;
   let rec={};
   if(id){ try{ rec=await api('GET', M().api.rec+'/'+id); }catch(e){ toast("No se pudo cargar: "+e.message); return; } }
+  // Nueva orden: precargar valores frecuentes desde caché (no aplica al editar).
+  if(!id && ACT==='ordenes') rec=ordCacheLoad();
   CUR_REC=rec||{};
   const ro = !!id && recordReadOnly(rec);   // General viendo un registro Procesado
   document.getElementById('formTitle').textContent = id? (ro? "Ver Registro":"Editar Registro") : "Nuevo Registro";
@@ -830,6 +859,14 @@ function dependentSelect(f,rec){
     });
     refresh();
   },0);
+  // Grupo Artículo: al elegirlo, autocompleta el Centro de Costo relacionado (si existe).
+  if(f.key==='grupo_articulo'){
+    ctrl.hidden.addEventListener('change', ()=>{
+      const centro=(M().grupoCentro||{})[ctrl.getValue()];
+      const cc=document.getElementById('fld_centro_costo');
+      if(centro && cc && cc._combo) cc._combo.setValue(centro);
+    });
+  }
   row.appendChild(ctrl.wrap);
   if(canManageCat()){
     const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
@@ -849,6 +886,7 @@ async function saveRecord(){
   try{
     if(editingId){ await api('PUT', M().api.rec+'/'+editingId, rec); toast("Registro actualizado correctamente"); }
     else{ await api('POST', M().api.rec, rec); toast("Registro creado correctamente"); }
+    if(ACT==='ordenes') ordCacheSave(rec);   // recuerda los últimos valores para la próxima orden nueva
     editingId=null; await loadRecords(); renderMain(); showGrid();
   }catch(e){ toast("Error al guardar: "+e.message); }
   finally{ btn.disabled=false; }
@@ -892,7 +930,7 @@ function currentOptions(){
   if(curDependent) return curDependent.map[curDependent.parentVal] || [];
   return M().lists[curListKey] || [];
 }
-function currentTipo(){ if(curDependent) return curDependent.fieldKey==="linea"?"lineas":"familias"; return curListKey; }
+function currentTipo(){ if(curDependent){ if(curDependent.fieldKey==="linea")return "lineas"; if(curDependent.fieldKey==="familia")return "familias"; return curDependent.fieldKey; } return curListKey; }
 function renderOpt(){
   const manage=canManageCat();
   const addBtn=document.getElementById('optAddBtn'); if(addBtn) addBtn.classList.toggle('hidden', !manage);
