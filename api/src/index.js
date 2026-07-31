@@ -465,7 +465,9 @@ app.http('solicitud-delete', {
     try {
       if (!puedeEditarEstado(await getRole(getUser(request))))
         return json(403, { error: 'No tiene permiso para eliminar registros' });
-      await query(`DELETE FROM dbo.Solicitud WHERE Id=$1`, [parseInt(request.params.id, 10)]);
+      const id = parseInt(request.params.id, 10);
+      await query(`DELETE FROM dbo.Adjunto WHERE Modulo='codigos' AND RegistroId=$1`, [id]);
+      await query(`DELETE FROM dbo.Solicitud WHERE Id=$1`, [id]);
       return json(200, { ok: true });
     } catch (e) {
       context.error(e);
@@ -688,9 +690,147 @@ app.http('orden-delete', {
     try {
       if (!puedeEditarEstado(await getRole(getUser(request))))
         return json(403, { error: 'No tiene permiso para eliminar registros' });
-      await query(`DELETE FROM dbo.OrdenPedido WHERE Id=$1`, [parseInt(request.params.id, 10)]);
+      const id = parseInt(request.params.id, 10);
+      await query(`DELETE FROM dbo.Adjunto WHERE Modulo='ordenes' AND RegistroId=$1`, [id]);
+      await query(`DELETE FROM dbo.OrdenPedido WHERE Id=$1`, [id]);
       return json(200, { ok: true });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar', detail: e.message }); }
+  }
+});
+
+/* ============================================================
+   MÓDULO: ARCHIVO ADJUNTO  (un archivo por registro, guardado en base64)
+   Disponible para TODOS los roles autenticados (no depende de Compras/Admin).
+   Rutas:
+     GET    /api/adjuntos/{modulo}/{id}            -> metadatos (sin contenido)
+     GET    /api/adjuntos/{modulo}/{id}/contenido  -> el archivo (inline o ?download=1)
+     POST   /api/adjuntos/{modulo}/{id}            -> subir/reemplazar {nombre, tipo?, contenido}
+     DELETE /api/adjuntos/{modulo}/{id}            -> quitar el archivo
+   modulo: 'codigos' (dbo.Solicitud) | 'ordenes' (dbo.OrdenPedido)
+   ============================================================ */
+
+/* Límite de tamaño por archivo. Para subirlo a 10 MB en el futuro, cambiar este
+   número aquí Y en frontend/index.html (const MAX_MB) y volver a desplegar.
+   La columna Contenido es TEXT, así que no requiere cambios en la base de datos. */
+const MAX_MB = 5;
+const MAX_BYTES = MAX_MB * 1024 * 1024;
+const ADJ_MODULOS = ['codigos', 'ordenes'];
+// Extensiones permitidas: PDF, imágenes, Word y Excel.
+const ADJ_EXT = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff',
+                 'doc', 'docx', 'xls', 'xlsx', 'csv'];
+const MIME_BY_EXT = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv'
+};
+function extOf(nombre) { const m = String(nombre || '').toLowerCase().match(/\.([a-z0-9]+)$/); return m ? m[1] : ''; }
+const adjModuloOk = (m) => ADJ_MODULOS.includes(m);
+
+/* Metadatos del adjunto (para pintar el botón Ver/Descargar sin traer el archivo) */
+app.http('adjunto-meta', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}',
+  handler: async (request, context) => {
+    try {
+      const modulo = request.params.modulo;
+      if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
+      const id = parseInt(request.params.id, 10);
+      const r = await query(
+        `SELECT NombreArchivo AS nombre, TipoMime AS tipo, Tamano AS tamano, SubidoPor AS subido_por,
+                to_char((FechaSubida AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha
+         FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
+      if (!r.rows.length) return json(200, { existe: false });
+      return json(200, { existe: true, ...r.rows[0] });
+    } catch (e) { context.error(e); return json(500, { error: 'Error al obtener el adjunto', detail: e.message }); }
+  }
+});
+
+/* Contenido del adjunto: devuelve los bytes reales con su Content-Type.
+   Sin ?download -> inline (el navegador muestra PDF/imagen).
+   Con ?download=1 -> attachment (fuerza la descarga; Word/Excel y demás). */
+app.http('adjunto-contenido', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}/contenido',
+  handler: async (request, context) => {
+    try {
+      const modulo = request.params.modulo;
+      if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
+      const id = parseInt(request.params.id, 10);
+      const r = await query(
+        `SELECT NombreArchivo AS nombre, TipoMime AS tipo, Contenido AS contenido
+         FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
+      if (!r.rows.length) return json(404, { error: 'Sin archivo adjunto' });
+      const row = r.rows[0];
+      const buf = Buffer.from(row.contenido, 'base64');
+      const mime = row.tipo || MIME_BY_EXT[extOf(row.nombre)] || 'application/octet-stream';
+      const download = request.query.get('download') === '1';
+      // Cabecera segura: nombre ASCII + variante UTF-8 (RFC 5987) para tildes/ñ.
+      const asciiName = String(row.nombre).replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+      const disp = `${download ? 'attachment' : 'inline'}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(row.nombre)}`;
+      return {
+        status: 200, body: buf,
+        headers: {
+          'Content-Type': mime,
+          'Content-Disposition': disp,
+          'Content-Length': String(buf.length),
+          'Cache-Control': 'private, no-store'
+        }
+      };
+    } catch (e) { context.error(e); return json(500, { error: 'Error al leer el archivo', detail: e.message }); }
+  }
+});
+
+/* Subir o reemplazar el archivo del registro. Cualquier rol autenticado. */
+app.http('adjunto-subir', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!user) return json(401, { error: 'No autenticado' });
+      const modulo = request.params.modulo;
+      if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
+      const id = parseInt(request.params.id, 10);
+      const body = await request.json();
+      const nombre = (body.nombre || '').trim();
+      let b64 = body.contenido || '';
+      if (!nombre || !b64) return json(400, { error: 'Falta el archivo' });
+      // Acepta data URL ("data:...;base64,XXXX") o base64 puro.
+      if (b64.slice(0, 5) === 'data:') { const c = b64.indexOf(','); if (c !== -1) b64 = b64.slice(c + 1); }
+      b64 = b64.replace(/\s/g, '');
+      const ext = extOf(nombre);
+      if (!ADJ_EXT.includes(ext)) return json(400, { error: 'Tipo de archivo no permitido (.' + ext + '). Solo PDF, imagen, Word o Excel.' });
+      const buf = Buffer.from(b64, 'base64');
+      if (!buf.length) return json(400, { error: 'El archivo está vacío o es inválido' });
+      if (buf.length > MAX_BYTES) return json(413, { error: `El archivo supera el máximo de ${MAX_MB} MB` });
+      const mime = (body.tipo && String(body.tipo)) || MIME_BY_EXT[ext] || 'application/octet-stream';
+      await query(
+        `INSERT INTO dbo.Adjunto (Modulo, RegistroId, NombreArchivo, TipoMime, Tamano, Contenido, SubidoPor, FechaSubida)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, (now() at time zone 'utc'))
+         ON CONFLICT (Modulo, RegistroId) DO UPDATE
+            SET NombreArchivo = EXCLUDED.NombreArchivo, TipoMime = EXCLUDED.TipoMime,
+                Tamano = EXCLUDED.Tamano, Contenido = EXCLUDED.Contenido,
+                SubidoPor = EXCLUDED.SubidoPor, FechaSubida = EXCLUDED.FechaSubida`,
+        [modulo, id, nombre, mime, buf.length, b64, user.name || user.email]);
+      return json(201, { ok: true, nombre, tipo: mime, tamano: buf.length });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo subir el archivo', detail: e.message }); }
+  }
+});
+
+/* Eliminar el archivo del registro. Cualquier rol autenticado. */
+app.http('adjunto-eliminar', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!user) return json(401, { error: 'No autenticado' });
+      const modulo = request.params.modulo;
+      if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
+      const id = parseInt(request.params.id, 10);
+      await query(`DELETE FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
+      return json(200, { ok: true });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar el archivo', detail: e.message }); }
   }
 });
 

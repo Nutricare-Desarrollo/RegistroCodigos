@@ -40,6 +40,10 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | POST   | /api/ordenes                 | Crear orden                          |
 | PUT    | /api/ordenes/{id}            | Actualizar orden                     |
 | DELETE | /api/ordenes/{id}            | Eliminar orden                       |
+| GET    | /api/adjuntos/{modulo}/{id}  | Metadatos del archivo adjunto (sin contenido) |
+| GET    | /api/adjuntos/{modulo}/{id}/contenido | Descarga el archivo (`?download=1` fuerza descarga) |
+| POST   | /api/adjuntos/{modulo}/{id}  | Subir/reemplazar el archivo (base64) |
+| DELETE | /api/adjuntos/{modulo}/{id}  | Quitar el archivo adjunto            |
 
 ## Puesta en marcha
 
@@ -47,12 +51,17 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 1. Crear un **Azure Database for PostgreSQL Flexible Server** (para mínimo costo:
    tamaño *Burstable B1ms*; se puede detener cuando no se use). Crear la base
    `RegistroCodigos`.
-2. Ejecutar, en orden, `database/RegistroCodigos.sql` y luego `database/OrdenPedido.sql`
-   con `psql` (o pgAdmin / Azure Data Studio). Crean los esquemas `cat`/`dbo`, las tablas
-   y los catálogos:
+2. Ejecutar, en orden, los scripts de `database/` con `psql` (o pgAdmin / Azure Data
+   Studio). Los base (`RegistroCodigos.sql`, `OrdenPedido.sql`) crean esquemas, tablas y
+   catálogos; las migraciones `V2`/`V3`/`V4` son idempotentes y no destructivas (se pueden
+   correr sobre una base con datos). `V4_Adjuntos.sql` crea la tabla `dbo.Adjunto` (archivo
+   por registro en base64):
    ```bash
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/RegistroCodigos.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/OrdenPedido.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V2_Estado_Roles.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V3_Ajustes_Codigos_Ordenes.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V4_Adjuntos.sql
    ```
 3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
@@ -80,6 +89,20 @@ npm start
 # En otra terminal, servir el frontend con la SWA CLI:
 npx @azure/static-web-apps-cli start frontend --api-location api
 ```
+
+## Archivo adjunto por registro
+
+Al **editar** un registro (Códigos u Órdenes) se puede subir **un** archivo, que se
+guarda en la base de datos en **base64** (tabla `dbo.Adjunto`, un archivo por registro:
+al subir otro se reemplaza). Si es **PDF o imagen** se puede **Ver** en el navegador; si
+es **Word/Excel** (u otro no visualizable) se **Descarga**. Está disponible para **todos
+los roles** autenticados; en un registro en solo lectura (Procesado visto por rol General)
+solo se permite Ver/Descargar.
+
+- **Tipos permitidos:** PDF, imagen (png/jpg/gif/webp/bmp/tiff), Word (doc/docx) y Excel (xls/xlsx/csv).
+- **Tamaño máximo:** definido por la constante `MAX_MB` (hoy **5 MB**). Para cambiarlo (p. ej.
+  a 10 MB) edite `MAX_MB` en **`api/src/index.js`** y en **`frontend/index.html`** y vuelva a
+  desplegar. La columna `Contenido` es `TEXT`, así que no requiere cambios en la base de datos.
 
 ## Seguridad
 - Las credenciales de PostgreSQL y el secret de Entra ID viven **solo** en las App

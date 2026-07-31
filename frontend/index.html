@@ -155,6 +155,13 @@ select:disabled,input:disabled,textarea:disabled{background:#f2f5f7;color:#5b6b7
 button:disabled{opacity:.5;cursor:not-allowed}
 /* Combo con búsqueda */
 #viewForm .card{overflow:visible}   /* que el panel del combo no se recorte */
+.adj-box{border:1px dashed var(--line);border-radius:10px;padding:14px;background:#fafcfe}
+.adj-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.adj-name{font-weight:600;color:var(--brand-d);word-break:break-all}
+.adj-meta{color:var(--muted);font-size:12px}
+.adj-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.adj-empty{color:var(--muted)}
+.btn-sm{padding:6px 12px;font-size:13px}
 .cmb{position:relative;flex:1;min-width:0}
 .cmb-input{width:100%}
 .cmb-panel{position:absolute;z-index:60;left:0;right:0;top:calc(100% + 3px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-height:240px;overflow-y:auto}
@@ -814,7 +821,81 @@ function buildForm(rec, readOnly){
   if(readOnly){
     c.querySelectorAll('input,select,textarea,button').forEach(el=>{ el.disabled=true; });
   }
+  // Archivo adjunto: solo al EDITAR un registro existente (necesita Id). Se agrega
+  // después de deshabilitar, para que Ver/Descargar sigan activos en solo lectura.
+  if(editingId){
+    const st=document.createElement('div'); st.className="section-title"; st.textContent="Archivo Adjunto"; c.appendChild(st);
+    const box=document.createElement('div'); box.className="adj-box full"; box.id="adjBox";
+    box.innerHTML='<span class="adj-empty">Cargando…</span>';
+    c.appendChild(box);
+    loadAdjunto(ACT, editingId, readOnly);
+  }
 }
+/* ====================== ARCHIVO ADJUNTO ======================
+   Un archivo por registro, guardado en base64. Disponible para todos los roles.
+   MAX_MB debe coincidir con el MAX_MB de api/src/index.js (para cambiarlo a 10,
+   editar el número en ambos y volver a desplegar). */
+const MAX_MB = 5;
+const ADJ_ACCEPT = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.doc,.docx,.xls,.xlsx,.csv";
+const ADJ_EXT_OK = ["pdf","png","jpg","jpeg","gif","webp","bmp","tif","tiff","doc","docx","xls","xlsx","csv"];
+const ADJ_IMG_EXT = ["png","jpg","jpeg","gif","webp","bmp","tif","tiff"];
+function adjExt(nombre){ return String(nombre||"").toLowerCase().split('.').pop(); }
+function adjViewable(tipo,nombre){
+  const t=(tipo||"").toLowerCase();
+  if(t==="application/pdf"||t.startsWith("image/")) return true;
+  const e=adjExt(nombre); return e==="pdf"||ADJ_IMG_EXT.includes(e);
+}
+function fmtBytes(n){ if(n==null||n==="") return ""; n=Number(n); if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(2)+" MB"; }
+async function loadAdjunto(modulo, id, readOnly){
+  const box=document.getElementById('adjBox'); if(!box) return;
+  let meta={existe:false};
+  try{ meta=await api('GET','/adjuntos/'+modulo+'/'+id); }
+  catch(e){ box.innerHTML='<span class="adj-empty">No se pudo cargar el adjunto.</span>'; return; }
+  let html='';
+  if(meta.existe){
+    const puedeVer=adjViewable(meta.tipo, meta.nombre);
+    html+='<div class="adj-row"><span>📎</span><span class="adj-name">'+esc(meta.nombre)+'</span>'
+        + '<span class="adj-meta">'+[fmtBytes(meta.tamano), meta.fecha?('· '+esc(meta.fecha)):''].filter(Boolean).join(' ')+'</span></div>';
+    html+='<div class="adj-actions">';
+    if(puedeVer) html+='<button type="button" class="btn-ghost btn-sm" onclick="verAdjunto(\''+modulo+'\','+id+',false)">👁 Ver</button>';
+    html+='<button type="button" class="btn-ghost btn-sm" onclick="verAdjunto(\''+modulo+'\','+id+',true)">⬇ Descargar</button>';
+    if(!readOnly) html+='<button type="button" class="btn-no btn-sm" onclick="eliminarAdjunto(\''+modulo+'\','+id+')">🗑 Eliminar</button>';
+    html+='</div>';
+  } else {
+    html+='<div class="adj-empty">Sin archivo adjunto.</div>';
+  }
+  if(!readOnly){
+    html+='<div class="adj-actions">'
+        + '<input type="file" id="adjFile" accept="'+ADJ_ACCEPT+'" style="display:none" onchange="uploadAdjunto(\''+modulo+'\','+id+',this)">'
+        + '<button type="button" class="btn-primary btn-sm" onclick="document.getElementById(\'adjFile\').click()">'+(meta.existe?'Reemplazar archivo…':'Seleccionar archivo…')+'</button>'
+        + '<span class="adj-meta">PDF, imagen, Word o Excel · máx '+MAX_MB+' MB</span></div>';
+  }
+  box.innerHTML=html;
+}
+function verAdjunto(modulo,id,download){
+  window.open('/api/adjuntos/'+modulo+'/'+id+'/contenido'+(download?'?download=1':''), '_blank');
+}
+async function uploadAdjunto(modulo,id,input){
+  const file=input.files && input.files[0]; if(!file) return;
+  const ext=adjExt(file.name);
+  if(!ADJ_EXT_OK.includes(ext)){ toast("Tipo no permitido (."+ext+"). Solo PDF, imagen, Word o Excel."); input.value=""; return; }
+  if(file.size > MAX_MB*1024*1024){ toast("El archivo supera el máximo de "+MAX_MB+" MB"); input.value=""; return; }
+  const box=document.getElementById('adjBox'); if(box) box.innerHTML='<span class="adj-empty">Subiendo…</span>';
+  try{
+    const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error("No se pudo leer el archivo")); r.readAsDataURL(file); });
+    const b64=String(dataUrl).split(',')[1]||"";
+    await api('POST','/adjuntos/'+modulo+'/'+id, { nombre:file.name, tipo:file.type||"", contenido:b64 });
+    toast("Archivo subido");
+  }catch(e){ toast("Error al subir: "+e.message); }
+  input.value="";
+  loadAdjunto(modulo,id,false);
+}
+async function eliminarAdjunto(modulo,id){
+  try{ await api('DELETE','/adjuntos/'+modulo+'/'+id); toast("Archivo eliminado"); }
+  catch(e){ toast("Error al eliminar: "+e.message); }
+  loadAdjunto(modulo,id,false);
+}
+
 /* Combo con búsqueda "contiene": un input de texto para buscar/mostrar, un input
    oculto con id fld_<key> que guarda el valor real (lo lee saveRecord), y un panel
    de opciones filtradas. Reemplaza al <select> pero mantiene la misma interfaz .value. */
