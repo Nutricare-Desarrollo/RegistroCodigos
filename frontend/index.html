@@ -605,6 +605,7 @@ async function loadCatalogsFor(id){
   } else {
     m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector};
     m.hier={};
+    m.conv=c.conversiones||{};   // mapa código de producto -> unidades por caja (para el cálculo en Órdenes)
   }
 }
 async function loadRecords(){ M().records = await api('GET', M().api.rec); }
@@ -865,6 +866,8 @@ function buildForm(rec, readOnly){
     c.appendChild(box);
     loadAdjunto(ACT, editingId, readOnly);
   }
+  // Órdenes: cálculo Cajas ↔ Unidades x Caja y Total (solo lectura).
+  if(ACT==='ordenes' && !readOnly) wireOrdenConversion();
 }
 /* ====================== ARCHIVO ADJUNTO ======================
    Un archivo por registro, guardado en base64. Disponible para todos los roles.
@@ -977,16 +980,25 @@ function descFromProducto(nombre){
   const s=String(nombre||""); const i=s.indexOf(" — ");
   return i>=0 ? s.slice(i+3).trim() : "";
 }
+// Devuelve solo el CÓDIGO (texto antes de " — ").
+function codeFromProducto(nombre){
+  const s=String(nombre||""); const i=s.indexOf(" — ");
+  return (i>=0 ? s.slice(0,i) : s).trim();
+}
 function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
   const ctrl=makeCombo("fld_"+f.key, M().lists[f.list]||[], val, {placeholder:"-- Seleccione --"});
   row.appendChild(ctrl.wrap);
-  // Órdenes: al elegir el Código del Producto, autocompletar la "Descripción del Producto".
+  // Órdenes: al elegir el Código del Producto, autocompletar la "Descripción del Producto"
+  // y las "Unidades x Caja" según la conversión del producto (y recalcular el Total).
   if(f.key==="codigo_producto"){
     ctrl.hidden.addEventListener('change', ()=>{
       const desc=descFromProducto(ctrl.hidden.value);
       const d=document.getElementById('fld_descripcion');
       if(d && desc) d.value=desc;
+      const conv=(M().conv)||{}; const upc=conv[codeFromProducto(ctrl.hidden.value)];
+      const uEl=document.getElementById('fld_unidades_caja');
+      if(uEl && upc!=null && upc!==''){ uEl.value=upc; ordCalcTotal(); }
     });
   }
   if(canManageCat()){
@@ -995,6 +1007,44 @@ function comboWithPlus(f,val){
     row.appendChild(plus);
   }
   return row;
+}
+/* ---- Órdenes: cálculo Cajas ↔ Unidades x Caja, con Total de Unidades calculado ---- */
+function ordFieldNum(id){ const el=document.getElementById(id); if(!el) return NaN; const v=parseFloat(el.value); return isNaN(v)?NaN:v; }
+function ordShowConvMsg(msg){ const el=document.getElementById('ordConvMsg'); if(el){ el.textContent=msg||''; el.style.display=msg?'block':'none'; } }
+// Al escribir Cajas: Total = Cajas × Unidades x Caja.
+function ordCalcTotal(){
+  const cajas=ordFieldNum('fld_cajas'), upc=ordFieldNum('fld_unidades_caja');
+  const tEl=document.getElementById('fld_total_unidades'); if(!tEl) return;
+  ordShowConvMsg('');
+  if(cajas>0 && upc>0) tEl.value=cajas*upc;
+  else if(!(cajas>0)) tEl.value='';
+}
+// Al modificar Unidades x Caja: Cajas = Total / Unidades x Caja (debe ser entero).
+function ordCalcCajas(){
+  const upc=ordFieldNum('fld_unidades_caja');
+  const total=ordFieldNum('fld_total_unidades');
+  const cEl=document.getElementById('fld_cajas'); const tEl=document.getElementById('fld_total_unidades');
+  ordShowConvMsg('');
+  if(!(upc>0)) return;
+  if(total>0){
+    const c=total/upc;
+    if(Number.isInteger(c)){ cEl.value=c; }
+    else { ordShowConvMsg('La cantidad de artículos ('+total+') no corresponde con la cantidad de artículos por caja ('+upc+'): las cajas darían '+(Math.round(c*100)/100)+', que no es un número entero. Ajuste las Unidades x Caja o las Cajas.'); }
+  } else if(ordFieldNum('fld_cajas')>0){
+    tEl.value=ordFieldNum('fld_cajas')*upc;   // aún sin total: derivarlo de las cajas
+  }
+}
+function wireOrdenConversion(){
+  const cEl=document.getElementById('fld_cajas'), uEl=document.getElementById('fld_unidades_caja'), tEl=document.getElementById('fld_total_unidades');
+  if(!cEl||!uEl||!tEl) return;
+  tEl.readOnly=true; tEl.title='Se calcula automáticamente (Cajas × Unidades x Caja)'; tEl.style.background='#f4f7f9';
+  cEl.addEventListener('input', ordCalcTotal);
+  uEl.addEventListener('input', ordCalcCajas);
+  if(!document.getElementById('ordConvMsg')){
+    const msg=document.createElement('div'); msg.id='ordConvMsg';
+    msg.style.cssText='grid-column:1/-1;color:var(--danger);font-size:12.5px;margin-top:-4px;display:none';
+    const w=tEl.closest('.field'); if(w) w.insertAdjacentElement('afterend', msg);
+  }
 }
 function dependentSelect(f,rec){
   const row=document.createElement('div'); row.className="combo-row";
@@ -1389,46 +1439,25 @@ function convOpen(rec){
   const desc=document.createElement('input'); desc.type='text'; desc.id='conv_desc'; desc.readOnly=true;
   desc.value = rec ? (rec.descripcion||'') : descFromProducto(fullVal);
   fDesc.appendChild(desc); c.appendChild(fDesc);
-  // Caja / Unidades por caja / Total
+  // Caja / Unidades por caja
   const mkNum=(id,label,val)=>{ const w=document.createElement('div'); w.className='field';
     w.innerHTML='<label>'+label+' <span class="req">*</span></label>';
     const i=document.createElement('input'); i.type='number'; i.id=id; i.min='1'; i.step='1'; i.value=(val==null?'':val); w.appendChild(i); c.appendChild(w); return i; };
-  const iCaja=mkNum('conv_cajas','Caja', rec?rec.cajas:'');
-  const iUni =mkNum('conv_unidades','Unidades por caja', rec?rec.unidades_por_caja:'');
-  const iTot =mkNum('conv_total','Total de unidades', rec?(Number(rec.cajas)*Number(rec.unidades_por_caja)||''):'');
-  iCaja.oninput=convRecalc; iUni.oninput=convRecalc; iTot.oninput=convValidateLive;
+  mkNum('conv_cajas','Caja', rec?rec.cajas:'');
+  mkNum('conv_unidades','Unidades por caja', rec?rec.unidades_por_caja:'');
   convCombo.hidden.addEventListener('change', ()=>{ document.getElementById('conv_desc').value=descFromProducto(convCombo.hidden.value); });
   document.getElementById('convModal').classList.remove('hidden');
   setTimeout(()=>{ try{ convCombo.search.focus(); }catch(e){} },60);
 }
 function convClose(){ document.getElementById('convModal').classList.add('hidden'); convEditId=null; convCombo=null; }
-function convRecalc(){
-  const cajas=parseInt(document.getElementById('conv_cajas').value,10);
-  const un=parseInt(document.getElementById('conv_unidades').value,10);
-  if(cajas>0 && un>0) document.getElementById('conv_total').value=cajas*un;
-  convValidateLive();
-}
-function convValidateLive(){
-  const cajas=parseInt(document.getElementById('conv_cajas').value,10);
-  const un=parseInt(document.getElementById('conv_unidades').value,10);
-  const total=parseInt(document.getElementById('conv_total').value,10);
-  const el=document.getElementById('convError');
-  if(cajas>0 && un>0 && total>0 && total!==cajas*un){
-    el.textContent=`El Total de unidades (${total}) debe ser igual a Cajas × Unidades por caja (= ${cajas*un}).`; return false;
-  }
-  el.textContent=''; return true;
-}
 async function convGuardar(){
   const el=document.getElementById('convError');
   const codigo=convCombo?convCombo.hidden.value:'';
   const cajas=parseInt(document.getElementById('conv_cajas').value,10);
   const un=parseInt(document.getElementById('conv_unidades').value,10);
-  const total=parseInt(document.getElementById('conv_total').value,10);
   if(!codigo){ el.textContent='Seleccione el código de producto.'; return; }
   if(!(cajas>0)){ el.textContent='La Caja debe ser un entero mayor a cero.'; return; }
   if(!(un>0)){ el.textContent='Las Unidades por caja deben ser un entero mayor a cero.'; return; }
-  if(!(total>0)){ el.textContent='El Total de unidades debe ser un entero mayor a cero.'; return; }
-  if(total!==cajas*un){ el.textContent=`El Total de unidades (${total}) debe ser igual a Cajas × Unidades por caja (= ${cajas*un}).`; return; }
   const body={ codigo_producto:codigo, cajas:cajas, unidades_por_caja:un };
   try{
     if(convEditId) await api('PUT','/conversiones/'+convEditId, body);

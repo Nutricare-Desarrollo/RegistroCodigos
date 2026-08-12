@@ -543,7 +543,13 @@ app.http('catalogos-ordenes', {
         one('cat.OP_Producto'), one('cat.OP_Bodega'), one('cat.OP_Proveedor'),
         one('cat.OP_Transporte'), one('cat.OP_Sector')
       ]);
-      return json(200, { productos, bodegas, proveedores, transporte, sector });
+      // Mapa de conversiones (código de producto -> unidades por caja) para autocompletar en Órdenes.
+      const convRows = (await query(
+        `SELECT split_part(p.Nombre, ' — ', 1) AS codigo, c.UnidadesPorCaja AS upc
+         FROM dbo.Conversion c JOIN cat.OP_Producto p ON p.Id = c.ProductoId`)).rows;
+      const conversiones = {};
+      for (const r of convRows) conversiones[r.codigo] = r.upc;
+      return json(200, { productos, bodegas, proveedores, transporte, sector, conversiones });
     } catch (e) { context.error(e); return json(500, { error: 'Error al cargar catálogos', detail: e.message }); }
   }
 });
