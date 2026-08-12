@@ -937,10 +937,23 @@ function makeCombo(id, options, val, cfg){
   hidden._combo=ctrl;
   return ctrl;
 }
+// Del valor del catálogo de productos ("CÓDIGO — Descripción") devuelve solo la Descripción.
+function descFromProducto(nombre){
+  const s=String(nombre||""); const i=s.indexOf(" — ");
+  return i>=0 ? s.slice(i+3).trim() : "";
+}
 function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
   const ctrl=makeCombo("fld_"+f.key, M().lists[f.list]||[], val, {placeholder:"-- Seleccione --"});
   row.appendChild(ctrl.wrap);
+  // Órdenes: al elegir el Código del Producto, autocompletar la "Descripción del Producto".
+  if(f.key==="codigo_producto"){
+    ctrl.hidden.addEventListener('change', ()=>{
+      const desc=descFromProducto(ctrl.hidden.value);
+      const d=document.getElementById('fld_descripcion');
+      if(d && desc) d.value=desc;
+    });
+  }
   if(canManageCat()){
     const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
     plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
