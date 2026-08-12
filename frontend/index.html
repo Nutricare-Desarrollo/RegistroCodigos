@@ -998,7 +998,8 @@ function comboWithPlus(f,val){
       if(d && desc) d.value=desc;
       const conv=(M().conv)||{}; const upc=conv[codeFromProducto(ctrl.hidden.value)];
       const uEl=document.getElementById('fld_unidades_caja');
-      if(uEl && upc!=null && upc!==''){ uEl.value=upc; ordCalcTotal(); }
+      if(uEl){ uEl.value=(upc!=null && upc!=='')?upc:''; ordCalcTotal(); }
+      ordUpdateHint();
     });
   }
   if(canManageCat()){
@@ -1011,13 +1012,19 @@ function comboWithPlus(f,val){
 /* ---- Órdenes: cálculo Cajas ↔ Unidades x Caja, con Total de Unidades calculado ---- */
 function ordFieldNum(id){ const el=document.getElementById(id); if(!el) return NaN; const v=parseFloat(el.value); return isNaN(v)?NaN:v; }
 function ordShowConvMsg(msg){ const el=document.getElementById('ordConvMsg'); if(el){ el.textContent=msg||''; el.style.display=msg?'block':'none'; } }
+// Guía gris tenue sobre el campo Cajas: "1 Caja = N Unidades".
+function ordUpdateHint(){
+  const el=document.getElementById('ordConvHint'); if(!el) return;
+  const upc=ordFieldNum('fld_unidades_caja');
+  if(upc>0){ el.textContent='1 Caja = '+upc+' '+(upc===1?'Unidad':'Unidades'); el.style.display='block'; }
+  else { el.textContent=''; el.style.display='none'; }
+}
 // Al escribir Cajas: Total = Cajas × Unidades x Caja.
 function ordCalcTotal(){
   const cajas=ordFieldNum('fld_cajas'), upc=ordFieldNum('fld_unidades_caja');
   const tEl=document.getElementById('fld_total_unidades'); if(!tEl) return;
   ordShowConvMsg('');
-  if(cajas>0 && upc>0) tEl.value=cajas*upc;
-  else if(!(cajas>0)) tEl.value='';
+  tEl.value = (cajas>0 && upc>0) ? cajas*upc : '';
 }
 // Al modificar Unidades x Caja: Cajas = Total / Unidades x Caja (debe ser entero).
 function ordCalcCajas(){
@@ -1033,6 +1040,7 @@ function ordCalcCajas(){
   } else if(ordFieldNum('fld_cajas')>0){
     tEl.value=ordFieldNum('fld_cajas')*upc;   // aún sin total: derivarlo de las cajas
   }
+  ordUpdateHint();
 }
 function wireOrdenConversion(){
   const cEl=document.getElementById('fld_cajas'), uEl=document.getElementById('fld_unidades_caja'), tEl=document.getElementById('fld_total_unidades');
@@ -1045,6 +1053,14 @@ function wireOrdenConversion(){
     msg.style.cssText='grid-column:1/-1;color:var(--danger);font-size:12.5px;margin-top:-4px;display:none';
     const w=tEl.closest('.field'); if(w) w.insertAdjacentElement('afterend', msg);
   }
+  // Guía "1 Caja = N Unidades" sobre el campo Cajas.
+  if(!document.getElementById('ordConvHint')){
+    const hint=document.createElement('div'); hint.id='ordConvHint';
+    hint.style.cssText='color:#9aa7b1;font-size:12px;font-style:italic;margin-bottom:4px;display:none';
+    const w=cEl.closest('.field'); const lbl=w?w.querySelector('label'):null;
+    if(lbl) lbl.insertAdjacentElement('afterend', hint); else if(w) w.insertBefore(hint, cEl);
+  }
+  ordUpdateHint();
 }
 function dependentSelect(f,rec){
   const row=document.createElement('div'); row.className="combo-row";
