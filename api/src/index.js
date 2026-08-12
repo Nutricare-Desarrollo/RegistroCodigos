@@ -893,3 +893,103 @@ app.http('usuario-set-rol', {
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo asignar el rol', detail: e.message }); }
   }
 });
+
+/* ============================================================
+   MÓDULO: CONVERSIONES (Caja -> Unid)  — solo Compras / Administrador
+   ============================================================ */
+const puedeConversiones = (rol) => rol === 'Compras' || rol === 'Administrador';
+
+// Código = texto antes del separador " — " en OP_Producto.Nombre; Descripción = el resto.
+const CONV_SELECT = `
+SELECT c.Id AS id, p.Id AS producto_id,
+       split_part(p.Nombre, ' — ', 1) AS codigo_producto,
+       CASE WHEN position(' — ' in p.Nombre) > 0
+            THEN substring(p.Nombre from position(' — ' in p.Nombre) + 3)
+            ELSE '' END AS descripcion,
+       c.Cajas AS cajas, c.UnidadesPorCaja AS unidades_por_caja,
+       (c.Cajas * c.UnidadesPorCaja) AS total_unidades,
+       to_char((c.FechaCreacion AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha_creacion
+FROM dbo.Conversion c JOIN cat.OP_Producto p ON p.Id = c.ProductoId`;
+
+function convValidate(body) {
+  const cajas = parseInt(body.cajas, 10);
+  const un = parseInt(body.unidades_por_caja, 10);
+  if (!body.codigo_producto || !String(body.codigo_producto).trim()) return 'Seleccione el código de producto';
+  if (!(cajas > 0)) return 'La Caja debe ser un entero mayor a cero';
+  if (!(un > 0)) return 'Las Unidades por caja deben ser un entero mayor a cero';
+  return null;
+}
+
+app.http('conversiones-list', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'conversiones',
+  handler: async (request, context) => {
+    try {
+      if (!puedeConversiones(await getRole(getUser(request)))) return json(403, { error: 'Solo Compras/Administrador' });
+      const r = await query(`${CONV_SELECT} ORDER BY codigo_producto`);
+      return json(200, r.rows);
+    } catch (e) { context.error(e); return json(500, { error: 'Error al listar conversiones', detail: e.message }); }
+  }
+});
+app.http('conversion-get', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'conversiones/{id}',
+  handler: async (request, context) => {
+    try {
+      if (!puedeConversiones(await getRole(getUser(request)))) return json(403, { error: 'Solo Compras/Administrador' });
+      const r = await query(`${CONV_SELECT} WHERE c.Id=$1`, [parseInt(request.params.id, 10)]);
+      if (!r.rows.length) return json(404, { error: 'No encontrado' });
+      return json(200, r.rows[0]);
+    } catch (e) { context.error(e); return json(500, { error: 'Error al obtener', detail: e.message }); }
+  }
+});
+app.http('conversion-create', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'conversiones',
+  handler: async (request, context) => {
+    try {
+      if (!puedeConversiones(await getRole(getUser(request)))) return json(403, { error: 'No tiene permiso para crear conversiones' });
+      const body = await request.json();
+      const err = convValidate(body);
+      if (err) return json(400, { error: err });
+      const productoId = await catId('cat.OP_Producto', String(body.codigo_producto).trim());
+      const r = await query(
+        `INSERT INTO dbo.Conversion (ProductoId, Cajas, UnidadesPorCaja) VALUES ($1,$2,$3) RETURNING Id`,
+        [productoId, parseInt(body.cajas, 10), parseInt(body.unidades_por_caja, 10)]);
+      return json(201, { ok: true, id: r.rows[0].id });
+    } catch (e) {
+      context.error(e);
+      if (isUnique(e)) return json(409, { error: 'Ya existe una conversión para ese producto' });
+      return json(500, { error: 'No se pudo crear', detail: e.message });
+    }
+  }
+});
+app.http('conversion-update', {
+  methods: ['PUT'], authLevel: 'anonymous', route: 'conversiones/{id}',
+  handler: async (request, context) => {
+    try {
+      if (!puedeConversiones(await getRole(getUser(request)))) return json(403, { error: 'No tiene permiso para editar conversiones' });
+      const id = parseInt(request.params.id, 10);
+      const body = await request.json();
+      const err = convValidate(body);
+      if (err) return json(400, { error: err });
+      const productoId = await catId('cat.OP_Producto', String(body.codigo_producto).trim());
+      const r = await query(
+        `UPDATE dbo.Conversion SET ProductoId=$1, Cajas=$2, UnidadesPorCaja=$3 WHERE Id=$4`,
+        [productoId, parseInt(body.cajas, 10), parseInt(body.unidades_por_caja, 10), id]);
+      if (!r.rowCount) return json(404, { error: 'No encontrado' });
+      return json(200, { ok: true });
+    } catch (e) {
+      context.error(e);
+      if (isUnique(e)) return json(409, { error: 'Ya existe una conversión para ese producto' });
+      return json(500, { error: 'No se pudo actualizar', detail: e.message });
+    }
+  }
+});
+app.http('conversion-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'conversiones/{id}',
+  handler: async (request, context) => {
+    try {
+      if (!puedeConversiones(await getRole(getUser(request)))) return json(403, { error: 'No tiene permiso para eliminar conversiones' });
+      await query(`DELETE FROM dbo.Conversion WHERE Id=$1`, [parseInt(request.params.id, 10)]);
+      return json(200, { ok: true });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar', detail: e.message }); }
+  }
+});

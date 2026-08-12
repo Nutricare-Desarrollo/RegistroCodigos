@@ -222,6 +222,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
         <div class="nav-item" id="nav-codigos" onclick="switchModule('codigos')"><span class="ic">🏷️</span> Creación de Códigos</div>
         <div class="nav-item" id="nav-ordenes" onclick="switchModule('ordenes')"><span class="ic">📦</span> Solicitud de Orden de Pedido</div>
         <div class="nav-label">Configuración</div>
+        <div class="nav-item hidden" id="nav-conversiones" onclick="showConversiones()"><span class="ic">🔁</span> Conversiones</div>
         <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
         <div class="nav-item hidden" id="nav-usuarios" onclick="showUsuarios()"><span class="ic">👥</span> Usuarios y Roles</div>
       </nav>
@@ -297,6 +298,22 @@ button:disabled{opacity:.5;cursor:not-allowed}
             <button class="btn-ghost hidden" id="formPdfBtn" onclick="downloadFormPDF()">⬇ Descargar PDF</button>
             <button class="btn-primary" id="formSaveBtn" onclick="saveRecord()">Guardar</button>
           </div>
+        </div>
+      </section>
+
+      <!-- CONVERSIONES (solo Compras / Administrador) -->
+      <section id="viewConversiones" class="hidden">
+        <div class="page-head">
+          <div><h2>Conversiones</h2><div class="sub">Conversión de unidades por producto (Caja → Unidades)</div></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-ghost" onclick="loadConversiones()">🔄 Actualizar</button>
+            <button class="btn-primary" onclick="convNuevo()">＋ Nuevo</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table id="convTable"><thead id="convHead"></thead><tbody id="convBody"></tbody></table></div>
+          <div id="convEmpty" class="empty hidden"><div class="big">🔁</div><div>No hay conversiones registradas.</div></div>
+          <div class="grid-foot" id="convFoot"></div>
         </div>
       </section>
 
@@ -387,6 +404,21 @@ button:disabled{opacity:.5;cursor:not-allowed}
     <div class="modal-foot" style="justify-content:center">
       <button class="btn-no" onclick="closeConfirm()">No</button>
       <button class="btn-yes" onclick="confirmYes()">Sí, eliminar</button></div>
+  </div>
+</div>
+
+<!-- MODAL Conversión (Nuevo / Editar) -->
+<div id="convModal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head"><h3 id="convModalTitle">Nueva conversión</h3><button class="x" onclick="convClose()">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid" id="convFields"></div>
+      <p id="convError" style="color:var(--danger);font-size:13px;margin:8px 0 0;min-height:16px"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-no" onclick="convClose()">Cancelar</button>
+      <button class="btn-primary" id="convSaveBtn" onclick="convGuardar()">Guardar</button>
+    </div>
   </div>
 </div>
 
@@ -552,12 +584,15 @@ function onRoleSim(){
   // Si el rol simulado pierde acceso a una vista abierta, vuelve al listado.
   if(!isAdmin() && !document.getElementById('viewUsuarios').classList.contains('hidden')) showGrid();
   if(!canManageCat() && !document.getElementById('viewCatalogos').classList.contains('hidden')) showGrid();
+  if(!canManageCat() && !document.getElementById('viewConversiones').classList.contains('hidden')) showGrid();
   renderMain();
 }
 function applyRoleVisibility(){
   document.getElementById('nav-usuarios').classList.toggle('hidden', !isAdmin());
   // Catálogos: visible solo para Compras y Administrador.
   document.getElementById('nav-catalogos').classList.toggle('hidden', !canManageCat());
+  // Conversiones: visible solo para Compras y Administrador.
+  document.getElementById('nav-conversiones').classList.toggle('hidden', !canManageCat());
 }
 
 /* ====================== CARGA DE DATOS ====================== */
@@ -575,7 +610,7 @@ async function loadCatalogsFor(id){
 async function loadRecords(){ M().records = await api('GET', M().api.rec); }
 
 /* ====================== NAVEGACIÓN ====================== */
-const VIEWS=['viewDashboard','viewGrid','viewForm','viewCatalogos','viewUsuarios'];
+const VIEWS=['viewDashboard','viewGrid','viewForm','viewConversiones','viewCatalogos','viewUsuarios'];
 function showOnly(id){ VIEWS.forEach(v=>document.getElementById(v).classList.toggle('hidden', v!==id)); }
 function setNav(id){ document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); const n=document.getElementById(id); if(n) n.classList.add('active'); }
 async function switchModule(id){
@@ -1022,8 +1057,18 @@ function askDelete(id){
   document.getElementById('confirmRec').textContent = r? (esc(r[c[0].k])+" — "+esc(r[c[1]?c[1].k:c[0].k])):"";
   document.getElementById('confirmModal').classList.remove('hidden');
 }
-function closeConfirm(){ pendingDelete=null; document.getElementById('confirmModal').classList.add('hidden'); }
+function closeConfirm(){ pendingDelete=null; CONFIRM_CB=null; document.getElementById('confirmModal').classList.add('hidden'); }
+// Confirmación genérica reutilizable (además del borrado de registros de los módulos).
+let CONFIRM_CB=null;
+function askConfirmCB(text, recText, cb){
+  CONFIRM_CB=cb;
+  document.getElementById('confirmText').textContent=text||'¿Está seguro?';
+  document.getElementById('confirmRec').textContent=recText||'';
+  document.getElementById('confirmModal').classList.remove('hidden');
+}
 async function confirmYes(){
+  const cb=CONFIRM_CB;
+  if(cb){ CONFIRM_CB=null; document.getElementById('confirmModal').classList.add('hidden'); try{ await cb(); }catch(e){ toast('Error: '+e.message); } return; }
   if(pendingDelete!=null){ try{ await api('DELETE', M().api.rec+'/'+pendingDelete); toast("Registro eliminado"); await loadRecords(); }catch(e){ toast("Error al eliminar: "+e.message); } }
   closeConfirm(); renderMain(); showGrid();
 }
@@ -1274,6 +1319,131 @@ function showImportResults(res){
 }
 
 /* ====================== UTILIDADES ====================== */
+/* ====================== CONVERSIONES (Caja -> Unid) — solo Compras / Administrador ====================== */
+let CONV_ROWS=[], CONV_FILTERS={}, CONV_PRODUCTOS=[], convEditId=null, convCombo=null;
+const CONV_COLS=[
+  {k:'codigo_producto',l:'Código de Producto',tag:true},
+  {k:'descripcion',l:'Descripción de producto'},
+  {k:'cajas',l:'Caja'},
+  {k:'unidades_por_caja',l:'Unidades por caja'}
+];
+async function showConversiones(){
+  if(!canManageCat()){ toast('Su rol no tiene acceso'); showGrid(); return; }
+  setNav('nav-conversiones'); showOnly('viewConversiones');
+  if(!CONV_PRODUCTOS.length){ try{ const c=await api('GET','/catalogos-ordenes'); CONV_PRODUCTOS=c.productos||[]; }catch(e){} }
+  await loadConversiones();
+}
+async function loadConversiones(){
+  try{ CONV_ROWS=await api('GET','/conversiones'); }
+  catch(e){ CONV_ROWS=[]; toast('Error al cargar: '+e.message); }
+  renderConversiones();
+}
+function convFilter(k,v){ CONV_FILTERS[k]=v; convRenderBody(); }
+function convFiltered(){
+  return CONV_ROWS.filter(r=> Object.keys(CONV_FILTERS).every(k=>{
+    const f=(CONV_FILTERS[k]||'').trim().toLowerCase(); if(!f) return true;
+    return String(r[k]==null?'':r[k]).toLowerCase().includes(f);
+  }));
+}
+function renderConversiones(){
+  document.getElementById('convHead').innerHTML=
+    `<tr>${CONV_COLS.map(c=>`<th>${c.l}</th>`).join('')}<th style="text-align:right">Acciones</th></tr>`
+    +`<tr class="filter-row">${CONV_COLS.map(c=>`<th><input type="text" placeholder="Filtrar…" oninput="convFilter('${c.k}',this.value)" value="${attr(CONV_FILTERS[c.k])}"></th>`).join('')}<th></th></tr>`;
+  convRenderBody();
+}
+function convRenderBody(){
+  const rows=convFiltered(); const b=document.getElementById('convBody'); b.innerHTML='';
+  const vacio=CONV_ROWS.length===0;
+  document.getElementById('convEmpty').classList.toggle('hidden', !vacio);
+  document.getElementById('convTable').classList.toggle('hidden', vacio);
+  const foot=document.getElementById('convFoot');
+  foot.textContent = rows.length===1?'1 conversión':(rows.length+' conversiones');
+  foot.classList.toggle('hidden', vacio);
+  if(vacio) return;
+  if(!rows.length){ b.innerHTML=`<tr><td colspan="${CONV_COLS.length+1}" style="text-align:center;color:var(--muted);padding:28px">No se encontraron conversiones con los filtros aplicados.</td></tr>`; return; }
+  rows.forEach(r=>{
+    const cells=CONV_COLS.map(c=> c.tag?`<td><span class="tag">${esc(r[c.k])}</span></td>`:`<td>${esc(r[c.k])}</td>`).join('');
+    const tr=document.createElement('tr');
+    tr.innerHTML=cells+`<td><div class="actions-cell" style="display:flex;gap:6px;justify-content:flex-end">`
+      +`<button class="icon-btn edit-btn" title="Editar" onclick="convEditar(${r.id})">✏️</button>`
+      +`<button class="icon-btn del-btn" title="Eliminar" onclick="convEliminar(${r.id})">🗑️</button></div></td>`;
+    b.appendChild(tr);
+  });
+}
+function convNuevo(){ convOpen(null); }
+function convEditar(id){ const r=CONV_ROWS.find(x=>x.id===id); if(r) convOpen(r); }
+function convOpen(rec){
+  convEditId = rec?rec.id:null;
+  document.getElementById('convModalTitle').textContent = rec?'Editar conversión':'Nueva conversión';
+  document.getElementById('convError').textContent='';
+  const c=document.getElementById('convFields'); c.innerHTML='';
+  const fullVal = rec ? (String(rec.codigo_producto||'') + (rec.descripcion? ' — '+rec.descripcion : '')) : '';
+  // Código de Producto (combo con el catálogo de productos)
+  const fCod=document.createElement('div'); fCod.className='field full';
+  fCod.innerHTML='<label>Código de Producto <span class="req">*</span></label>';
+  convCombo=makeCombo('conv_codigo', CONV_PRODUCTOS, fullVal, {placeholder:'-- Seleccione --'});
+  fCod.appendChild(convCombo.wrap); c.appendChild(fCod);
+  // Descripción del Producto (solo lectura, derivada del código)
+  const fDesc=document.createElement('div'); fDesc.className='field full';
+  fDesc.innerHTML='<label>Descripción del Producto</label>';
+  const desc=document.createElement('input'); desc.type='text'; desc.id='conv_desc'; desc.readOnly=true;
+  desc.value = rec ? (rec.descripcion||'') : descFromProducto(fullVal);
+  fDesc.appendChild(desc); c.appendChild(fDesc);
+  // Caja / Unidades por caja / Total
+  const mkNum=(id,label,val)=>{ const w=document.createElement('div'); w.className='field';
+    w.innerHTML='<label>'+label+' <span class="req">*</span></label>';
+    const i=document.createElement('input'); i.type='number'; i.id=id; i.min='1'; i.step='1'; i.value=(val==null?'':val); w.appendChild(i); c.appendChild(w); return i; };
+  const iCaja=mkNum('conv_cajas','Caja', rec?rec.cajas:'');
+  const iUni =mkNum('conv_unidades','Unidades por caja', rec?rec.unidades_por_caja:'');
+  const iTot =mkNum('conv_total','Total de unidades', rec?(Number(rec.cajas)*Number(rec.unidades_por_caja)||''):'');
+  iCaja.oninput=convRecalc; iUni.oninput=convRecalc; iTot.oninput=convValidateLive;
+  convCombo.hidden.addEventListener('change', ()=>{ document.getElementById('conv_desc').value=descFromProducto(convCombo.hidden.value); });
+  document.getElementById('convModal').classList.remove('hidden');
+  setTimeout(()=>{ try{ convCombo.search.focus(); }catch(e){} },60);
+}
+function convClose(){ document.getElementById('convModal').classList.add('hidden'); convEditId=null; convCombo=null; }
+function convRecalc(){
+  const cajas=parseInt(document.getElementById('conv_cajas').value,10);
+  const un=parseInt(document.getElementById('conv_unidades').value,10);
+  if(cajas>0 && un>0) document.getElementById('conv_total').value=cajas*un;
+  convValidateLive();
+}
+function convValidateLive(){
+  const cajas=parseInt(document.getElementById('conv_cajas').value,10);
+  const un=parseInt(document.getElementById('conv_unidades').value,10);
+  const total=parseInt(document.getElementById('conv_total').value,10);
+  const el=document.getElementById('convError');
+  if(cajas>0 && un>0 && total>0 && total!==cajas*un){
+    el.textContent=`El Total de unidades (${total}) debe ser igual a Cajas × Unidades por caja (= ${cajas*un}).`; return false;
+  }
+  el.textContent=''; return true;
+}
+async function convGuardar(){
+  const el=document.getElementById('convError');
+  const codigo=convCombo?convCombo.hidden.value:'';
+  const cajas=parseInt(document.getElementById('conv_cajas').value,10);
+  const un=parseInt(document.getElementById('conv_unidades').value,10);
+  const total=parseInt(document.getElementById('conv_total').value,10);
+  if(!codigo){ el.textContent='Seleccione el código de producto.'; return; }
+  if(!(cajas>0)){ el.textContent='La Caja debe ser un entero mayor a cero.'; return; }
+  if(!(un>0)){ el.textContent='Las Unidades por caja deben ser un entero mayor a cero.'; return; }
+  if(!(total>0)){ el.textContent='El Total de unidades debe ser un entero mayor a cero.'; return; }
+  if(total!==cajas*un){ el.textContent=`El Total de unidades (${total}) debe ser igual a Cajas × Unidades por caja (= ${cajas*un}).`; return; }
+  const body={ codigo_producto:codigo, cajas:cajas, unidades_por_caja:un };
+  try{
+    if(convEditId) await api('PUT','/conversiones/'+convEditId, body);
+    else await api('POST','/conversiones', body);
+    toast('Conversión guardada'); convClose(); loadConversiones();
+  }catch(e){ el.textContent = e.message || 'No se pudo guardar'; }
+}
+function convEliminar(id){
+  const r=CONV_ROWS.find(x=>x.id===id); if(!r) return;
+  askConfirmCB('¿Está seguro que desea eliminar la conversión?', (r.codigo_producto||'')+(r.descripcion?(' — '+r.descripcion):''), async ()=>{
+    try{ await api('DELETE','/conversiones/'+id); toast('Conversión eliminada'); await loadConversiones(); }
+    catch(e){ toast('No se pudo eliminar: '+e.message); }
+  });
+}
+
 function esc(s){ if(s===undefined||s===null||s==="")return "—"; return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function attr(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 let toastT;
