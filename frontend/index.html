@@ -775,6 +775,7 @@ function ordCacheLoad(){ try{ return JSON.parse(localStorage.getItem('ord_defaul
 function ordCacheSave(rec){ try{ const o={}; ORD_CACHE_FIELDS.forEach(k=>o[k]=rec[k]||''); localStorage.setItem('ord_defaults', JSON.stringify(o)); }catch{} }
 async function openForm(id){
   editingId=id||null;
+  ADJ_PENDIENTE=null;                       // el adjunto pendiente no se arrastra de un formulario a otro
   let rec={};
   if(id){ try{ rec=await api('GET', M().api.rec+'/'+id); }catch(e){ toast("No se pudo cargar: "+e.message); return; } }
   // Nueva orden: precargar valores frecuentes desde caché (no aplica al editar).
@@ -857,14 +858,16 @@ function buildForm(rec, readOnly){
   if(readOnly){
     c.querySelectorAll('input,select,textarea,button').forEach(el=>{ el.disabled=true; });
   }
-  // Archivo adjunto: solo al EDITAR un registro existente (necesita Id). Se agrega
-  // después de deshabilitar, para que Ver/Descargar sigan activos en solo lectura.
-  if(editingId){
+  // Archivo adjunto. Al EDITAR se consulta al servidor; en un registro NUEVO se elige aquí y se
+  // sube solo cuando se guarda (la API asocia el archivo a un Id que todavía no existe).
+  // Se agrega después de deshabilitar, para que Ver/Descargar sigan activos en solo lectura.
+  if(editingId || !readOnly){
     const st=document.createElement('div'); st.className="section-title"; st.textContent="Archivo Adjunto"; c.appendChild(st);
     const box=document.createElement('div'); box.className="adj-box full"; box.id="adjBox";
     box.innerHTML='<span class="adj-empty">Cargando…</span>';
     c.appendChild(box);
-    loadAdjunto(ACT, editingId, readOnly);
+    if(editingId) loadAdjunto(ACT, editingId, readOnly);
+    else renderAdjNuevo();
   }
   // Órdenes: cálculo Cajas ↔ Unidades x Caja y Total (solo lectura).
   if(ACT==='ordenes' && !readOnly) wireOrdenConversion();
@@ -884,6 +887,43 @@ function adjViewable(tipo,nombre){
   const e=adjExt(nombre); return e==="pdf"||ADJ_IMG_EXT.includes(e);
 }
 function fmtBytes(n){ if(n==null||n==="") return ""; n=Number(n); if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(2)+" MB"; }
+// Valida el tipo y el tamaño y lee el archivo a base64. Lanza error con el motivo si no aplica.
+async function adjLeerArchivo(file){
+  const ext=adjExt(file.name);
+  if(!ADJ_EXT_OK.includes(ext)) throw new Error("Tipo no permitido (."+ext+"). Solo PDF, imagen, Word o Excel.");
+  if(file.size > MAX_MB*1024*1024) throw new Error("El archivo supera el máximo de "+MAX_MB+" MB");
+  const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error("No se pudo leer el archivo")); r.readAsDataURL(file); });
+  return { nombre:file.name, tipo:file.type||"", contenido:String(dataUrl).split(',')[1]||"", tamano:file.size };
+}
+/* Registro NUEVO: el archivo elegido queda en memoria y se sube al crear el registro,
+   porque la API necesita el Id del registro para asociarlo. */
+let ADJ_PENDIENTE=null;
+function renderAdjNuevo(){
+  const box=document.getElementById('adjBox'); if(!box) return;
+  const picker='<input type="file" id="adjFile" accept="'+ADJ_ACCEPT+'" style="display:none" onchange="adjElegirNuevo(this)">';
+  let html='';
+  if(ADJ_PENDIENTE){
+    html='<div class="adj-row"><span>📎</span><span class="adj-name">'+esc(ADJ_PENDIENTE.nombre)+'</span>'
+       + '<span class="adj-meta">'+fmtBytes(ADJ_PENDIENTE.tamano)+'</span></div>'
+       + '<div class="adj-actions">'+picker
+       + '<button type="button" class="btn-ghost btn-sm" onclick="document.getElementById(\'adjFile\').click()">Cambiar archivo…</button>'
+       + '<button type="button" class="btn-no btn-sm" onclick="adjQuitarNuevo()">🗑 Quitar</button>'
+       + '<span class="adj-meta">Se adjunta al guardar el registro</span></div>';
+  } else {
+    html='<div class="adj-empty">Sin archivo adjunto.</div>'
+       + '<div class="adj-actions">'+picker
+       + '<button type="button" class="btn-primary btn-sm" onclick="document.getElementById(\'adjFile\').click()">Seleccionar archivo…</button>'
+       + '<span class="adj-meta">PDF, imagen, Word o Excel · máx '+MAX_MB+' MB · se adjunta al guardar</span></div>';
+  }
+  box.innerHTML=html;
+}
+async function adjElegirNuevo(input){
+  const file=input.files && input.files[0]; if(!file) return;
+  try{ ADJ_PENDIENTE=await adjLeerArchivo(file); }
+  catch(e){ toast(e.message); input.value=""; return; }
+  renderAdjNuevo();
+}
+function adjQuitarNuevo(){ ADJ_PENDIENTE=null; renderAdjNuevo(); }
 async function loadAdjunto(modulo, id, readOnly){
   const box=document.getElementById('adjBox'); if(!box) return;
   let meta={existe:false};
@@ -915,14 +955,12 @@ function verAdjunto(modulo,id,download){
 }
 async function uploadAdjunto(modulo,id,input){
   const file=input.files && input.files[0]; if(!file) return;
-  const ext=adjExt(file.name);
-  if(!ADJ_EXT_OK.includes(ext)){ toast("Tipo no permitido (."+ext+"). Solo PDF, imagen, Word o Excel."); input.value=""; return; }
-  if(file.size > MAX_MB*1024*1024){ toast("El archivo supera el máximo de "+MAX_MB+" MB"); input.value=""; return; }
+  let a;
+  try{ a=await adjLeerArchivo(file); }
+  catch(e){ toast(e.message); input.value=""; return; }
   const box=document.getElementById('adjBox'); if(box) box.innerHTML='<span class="adj-empty">Subiendo…</span>';
   try{
-    const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error("No se pudo leer el archivo")); r.readAsDataURL(file); });
-    const b64=String(dataUrl).split(',')[1]||"";
-    await api('POST','/adjuntos/'+modulo+'/'+id, { nombre:file.name, tipo:file.type||"", contenido:b64 });
+    await api('POST','/adjuntos/'+modulo+'/'+id, { nombre:a.nombre, tipo:a.tipo, contenido:a.contenido });
     toast("Archivo subido");
   }catch(e){ toast("Error al subir: "+e.message); }
   input.value="";
@@ -1131,9 +1169,22 @@ async function saveRecord(){
   const btn=document.getElementById('formSaveBtn'); btn.disabled=true;
   try{
     if(editingId){ await api('PUT', M().api.rec+'/'+editingId, rec); toast("Registro actualizado correctamente"); }
-    else{ await api('POST', M().api.rec, rec); toast("Registro creado correctamente"); }
+    else{
+      const r=await api('POST', M().api.rec, rec);
+      const nuevoId = r && r.id;
+      // El archivo elegido en el formulario nuevo se sube ahora, ya con el Id del registro.
+      // Si falla, el registro NO se pierde: se avisa para adjuntarlo editándolo.
+      if(!ADJ_PENDIENTE) toast("Registro creado correctamente");
+      else if(!nuevoId) toast("Registro creado, pero no se pudo adjuntar el archivo. Adjúntelo editando el registro.");
+      else {
+        try{
+          await api('POST','/adjuntos/'+ACT+'/'+nuevoId, { nombre:ADJ_PENDIENTE.nombre, tipo:ADJ_PENDIENTE.tipo, contenido:ADJ_PENDIENTE.contenido });
+          toast("Registro creado con el archivo adjunto");
+        }catch(e){ toast("Registro creado, pero el archivo no se pudo adjuntar ("+e.message+"). Adjúntelo editando el registro."); }
+      }
+    }
     if(ACT==='ordenes') ordCacheSave(rec);   // recuerda los últimos valores para la próxima orden nueva
-    editingId=null; await loadRecords(); renderMain(); showGrid();
+    editingId=null; ADJ_PENDIENTE=null; await loadRecords(); renderMain(); showGrid();
   }catch(e){ toast("Error al guardar: "+e.message); }
   finally{ btn.disabled=false; }
 }
