@@ -70,6 +70,10 @@ tbody td{padding:11px 14px;border-bottom:1px solid var(--line);color:var(--txt)}
 tbody tr:hover{background:#f5fafc}
 tbody tr:last-child td{border-bottom:none}
 .tag{background:#e8f4fb;color:var(--brand-d);padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600}
+/* Código del grid: abre el registro al hacer clic (es un <button> con la apariencia de .tag). */
+button.tag{border:0;font-family:inherit;line-height:1.5;cursor:pointer}
+button.tag:hover{background:#cfe9f8;text-decoration:underline}
+button.tag:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .empty{padding:60px 20px;text-align:center;color:var(--muted)}
 .empty .big{font-size:40px;margin-bottom:10px}
 .actions-cell{display:flex;gap:7px}
@@ -742,13 +746,19 @@ function renderBody(){
     return;
   }
   rows.forEach(r=>{
+    const ro = recordReadOnly(r);
     const cells=m.gridCols.map(c=>{
       if(c.estado) return `<td>${estadoBadge(r.estado)}</td>`;
-      if(c.tag)    return `<td><span class="tag">${esc(r[c.k])}</span></td>`;
+      // La columna Código abre el registro al hacer clic: editar, o ver si es de solo lectura.
+      if(c.tag){
+        const v=r[c.k];
+        if(v===undefined||v===null||v==='') return '<td></td>';
+        const t = ro ? 'Ver registro (Procesado · solo lectura)' : 'Editar registro';
+        return `<td><button type="button" class="tag" title="${t}" onclick="openForm(${r.id})">${esc(v)}</button></td>`;
+      }
       return `<td>${esc(r[c.k])}</td>`;
     }).join('');
     const delBtn = canDelete()? `<button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button>` : '';
-    const ro = recordReadOnly(r);
     const editBtn = ro
       ? `<button class="icon-btn edit-btn" title="Ver (procesado · solo lectura)" onclick="openForm(${r.id})">👁️</button>`
       : `<button class="icon-btn edit-btn" title="Editar" onclick="openForm(${r.id})">✏️</button>`;
