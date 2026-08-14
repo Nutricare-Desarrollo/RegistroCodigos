@@ -998,8 +998,8 @@ function comboWithPlus(f,val){
       if(d && desc) d.value=desc;
       const conv=(M().conv)||{}; const upc=conv[codeFromProducto(ctrl.hidden.value)];
       const uEl=document.getElementById('fld_unidades_caja');
-      if(uEl){ uEl.value=(upc!=null && upc!=='')?upc:''; ordCalcTotal(); }
-      ordUpdateHint();
+      if(uEl){ uEl.value=(upc!=null && upc!=='')?upc:''; ordRecalcDesdeConversion(); }
+      else ordUpdateHint();
     });
   }
   if(canManageCat()){
@@ -1009,7 +1009,9 @@ function comboWithPlus(f,val){
   }
   return row;
 }
-/* ---- Órdenes: cálculo Cajas ↔ Unidades x Caja, con Total de Unidades calculado ---- */
+/* ---- Órdenes: cálculo Cajas ↔ Total de Unidades ----
+   "Unidades x Caja" es la conversión del artículo: se autocompleta desde Conversiones y está
+   deshabilitada. El usuario captura Cajas o Total de Unidades y el otro campo se calcula. ---- */
 function ordFieldNum(id){ const el=document.getElementById(id); if(!el) return NaN; const v=parseFloat(el.value); return isNaN(v)?NaN:v; }
 function ordShowConvMsg(msg){ const el=document.getElementById('ordConvMsg'); if(el){ el.textContent=msg||''; el.style.display=msg?'block':'none'; } }
 // Guía gris tenue sobre el campo Cajas: "1 Caja = N Unidades".
@@ -1019,46 +1021,67 @@ function ordUpdateHint(){
   if(upc>0){ el.textContent='1 Caja = '+upc+' '+(upc===1?'Unidad':'Unidades'); el.style.display='block'; }
   else { el.textContent=''; el.style.display='none'; }
 }
-// Al escribir Cajas: Total = Cajas × Unidades x Caja.
+// Al escribir Cajas: Total de Unidades = Cajas × Unidades x Caja.
 function ordCalcTotal(){
   const cajas=ordFieldNum('fld_cajas'), upc=ordFieldNum('fld_unidades_caja');
   const tEl=document.getElementById('fld_total_unidades'); if(!tEl) return;
   ordShowConvMsg('');
-  tEl.value = (cajas>0 && upc>0) ? cajas*upc : '';
+  if(!(cajas>0)){ tEl.value=''; return; }
+  if(!(upc>0)){ tEl.value=''; ordShowConvMsg('El producto seleccionado no tiene conversión registrada (Unidades x Caja). Regístrela en Conversiones para poder calcular el total.'); return; }
+  if(!Number.isInteger(cajas)){ tEl.value=''; ordShowConvMsg('Las Cajas deben ser un número entero.'); return; }
+  tEl.value = cajas*upc;
 }
-// Al modificar Unidades x Caja: Cajas = Total / Unidades x Caja (debe ser entero).
+// Al escribir el Total de Unidades: Cajas = Total / Unidades x Caja (tiene que dar entero).
 function ordCalcCajas(){
   const upc=ordFieldNum('fld_unidades_caja');
   const total=ordFieldNum('fld_total_unidades');
-  const cEl=document.getElementById('fld_cajas'); const tEl=document.getElementById('fld_total_unidades');
+  const cEl=document.getElementById('fld_cajas'); if(!cEl) return;
   ordShowConvMsg('');
-  if(!(upc>0)) return;
-  if(total>0){
-    const c=total/upc;
-    if(Number.isInteger(c)){ cEl.value=c; }
-    else { ordShowConvMsg('La cantidad de artículos ('+total+') no corresponde con la cantidad de artículos por caja ('+upc+'): las cajas darían '+(Math.round(c*100)/100)+', que no es un número entero. Ajuste las Unidades x Caja o las Cajas.'); }
-  } else if(ordFieldNum('fld_cajas')>0){
-    tEl.value=ordFieldNum('fld_cajas')*upc;   // aún sin total: derivarlo de las cajas
-  }
+  if(!(total>0)){ cEl.value=''; return; }                       // sin total todavía: nada que calcular
+  if(!(upc>0)){ cEl.value=''; ordShowConvMsg('El producto seleccionado no tiene conversión registrada (Unidades x Caja). Regístrela en Conversiones para poder calcular las cajas.'); return; }
+  const c=total/upc;
+  if(Number.isInteger(c)){ cEl.value=c; return; }
+  // Valor no válido: se vacía Cajas y se indica cuáles totales sí son válidos.
+  cEl.value='';
+  const lo=Math.floor(c)*upc, hi=Math.ceil(c)*upc;
+  const sug = lo>0 ? (lo+' o '+hi) : String(hi);
+  ordShowConvMsg('El total de '+total+' unidades no es válido: 1 Caja = '+upc+' '+(upc===1?'Unidad':'Unidades')+
+                 ', así que darían '+(Math.round(c*100)/100)+' cajas. Digite un múltiplo de '+upc+' (por ejemplo '+sug+').');
+}
+// Cuando cambia el producto (y con él la conversión), recalcular a partir de lo que el usuario ya capturó.
+function ordRecalcDesdeConversion(){
+  if(ordFieldNum('fld_total_unidades')>0) ordCalcCajas();
+  else ordCalcTotal();
   ordUpdateHint();
 }
 function wireOrdenConversion(){
   const cEl=document.getElementById('fld_cajas'), uEl=document.getElementById('fld_unidades_caja'), tEl=document.getElementById('fld_total_unidades');
   if(!cEl||!uEl||!tEl) return;
-  tEl.readOnly=true; tEl.title='Se calcula automáticamente (Cajas × Unidades x Caja)'; tEl.style.background='#f4f7f9';
+  // "Unidades x Caja" es la conversión del artículo: la trae Conversiones y el usuario no la toca.
+  uEl.disabled=true; uEl.title='Conversión del producto: se toma de Conversiones y no se edita aquí';
+  // "Total de Unidades" pasa a ser capturable: al digitarlo se calculan las Cajas.
+  tEl.readOnly=false; tEl.title='Digite el total de unidades: las Cajas se calculan con la conversión del producto'; tEl.style.background='';
   cEl.addEventListener('input', ordCalcTotal);
-  uEl.addEventListener('input', ordCalcCajas);
+  tEl.addEventListener('input', ordCalcCajas);
   if(!document.getElementById('ordConvMsg')){
     const msg=document.createElement('div'); msg.id='ordConvMsg';
     msg.style.cssText='grid-column:1/-1;color:var(--danger);font-size:12.5px;margin-top:-4px;display:none';
     const w=tEl.closest('.field'); if(w) w.insertAdjacentElement('afterend', msg);
   }
-  // Guía "1 Caja = N Unidades" sobre el campo Cajas.
+  // Guía "1 Caja = N Unidades": en la misma línea de la etiqueta "Cajas", alineada al borde derecho del campo.
   if(!document.getElementById('ordConvHint')){
-    const hint=document.createElement('div'); hint.id='ordConvHint';
-    hint.style.cssText='color:#9aa7b1;font-size:12px;font-style:italic;margin-bottom:4px;display:none';
+    const hint=document.createElement('span'); hint.id='ordConvHint';
+    hint.style.cssText='color:#9aa7b1;font-size:12px;font-style:italic;font-weight:400;white-space:nowrap;display:none';
     const w=cEl.closest('.field'); const lbl=w?w.querySelector('label'):null;
-    if(lbl) lbl.insertAdjacentElement('afterend', hint); else if(w) w.insertBefore(hint, cEl);
+    if(lbl){
+      // La etiqueta pasa a ser una fila: su texto a la izquierda y la guía a la derecha.
+      const txt=document.createElement('span');
+      while(lbl.firstChild) txt.appendChild(lbl.firstChild);
+      lbl.appendChild(txt);
+      lbl.style.display='flex'; lbl.style.justifyContent='space-between';
+      lbl.style.alignItems='baseline'; lbl.style.gap='8px';
+      lbl.appendChild(hint);
+    } else if(w) w.insertBefore(hint, cEl);
   }
   ordUpdateHint();
 }

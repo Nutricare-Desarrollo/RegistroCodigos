@@ -531,6 +531,25 @@ async function ordResolve(body) {
 function ordValidate(body) {
   return ORD_FIELDS.filter(f => f.required && !String(body[f.key] || '').trim()).map(f => f.key);
 }
+// Coherencia entre Cajas, Unidades x Caja y Total de Unidades. Se valida también aquí (y no solo en
+// el formulario) porque la API recibe además la carga masiva por Excel y llamadas directas.
+// Devuelve el mensaje de error, o null si los valores son coherentes.
+function ordCoherencia(body) {
+  const num = (v) => (v === undefined || v === null || String(v).trim() === '') ? null : Number(v);
+  const campos = { cajas: num(body.cajas), unidades_caja: num(body.unidades_caja), total_unidades: num(body.total_unidades) };
+  for (const [k, v] of Object.entries(campos)) {
+    if (v !== null && !(Number.isInteger(v) && v >= 0))
+      return `El campo ${k} debe ser un número entero no negativo`;
+  }
+  const { cajas, unidades_caja: upc, total_unidades: total } = campos;
+  if (upc > 0 && total > 0 && total % upc !== 0)
+    return `El total de ${total} unidades no es válido: 1 Caja = ${upc} ` +
+           `${upc === 1 ? 'Unidad' : 'Unidades'}, así que no corresponde a un número entero de cajas. ` +
+           `Use un múltiplo de ${upc}`;
+  if (cajas > 0 && upc > 0 && total > 0 && total !== cajas * upc)
+    return `El total de unidades (${total}) no coincide con Cajas × Unidades x Caja (${cajas} × ${upc} = ${cajas * upc})`;
+  return null;
+}
 
 /* Catálogos del módulo de órdenes */
 app.http('catalogos-ordenes', {
@@ -644,6 +663,8 @@ app.http('orden-create', {
       const body = await request.json();
       const missing = ordValidate(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
+      const incoherente = ordCoherencia(body);
+      if (incoherente) return json(400, { error: incoherente });
       const vals = await ordResolve(body);
       const cols = Object.keys(vals);
       const params = cols.map(c => vals[c]);
@@ -665,6 +686,8 @@ app.http('orden-update', {
       const body = await request.json();
       const missing = ordValidate(body);
       if (missing.length) return json(400, { error: 'Faltan campos obligatorios', campos: missing });
+      const incoherente = ordCoherencia(body);
+      if (incoherente) return json(400, { error: incoherente });
       const rol = await getRole(user);
       // Una orden Procesada solo la puede editar Compras/Administrador; el rol General queda en solo lectura.
       if (!puedeEditarEstado(rol)) {
