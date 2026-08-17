@@ -73,6 +73,7 @@ const CAT_TABLES = {
   tipo_implante:  'cat.TipoImplante',
   origen:         'cat.PaisOrigen',
   proveedores:    'cat.Proveedor',
+  modelos:        'cat.Modelo',
   lote:           'cat.OpcionSiNo',
   es_implantable: 'cat.OpcionSiNo'
 };
@@ -96,8 +97,8 @@ const FIELD_MAP = [
   { key: 'pais_origen',    col: 'PaisOrigenId',           type: 'cat', cat: 'origen', required: true },
   { key: 'reg_sanitario',  col: 'RegistroSanitarioEMB',   type: 'text' },
   { key: 'fecha_venc',     col: 'FechaVencimientoEMB',    type: 'date' },
-  { key: 'modelo',         col: 'Modelo',                 type: 'text' },
-  { key: 'marca',          col: 'Marca',                  type: 'text' },
+  { key: 'modelo',         col: 'ModeloId',               type: 'cat', cat: 'modelos' },
+  { key: 'marca',          col: 'MarcaId',                type: 'marca' },
   { key: 'clasif_prov',    col: 'ClasificacionProveedor', type: 'text' },
   { key: 'tipo_implante',  col: 'TipoImplanteId',         type: 'cat', cat: 'tipo_implante' },
   { key: 'es_implantable', col: 'EsImplantableId',        type: 'cat', cat: 'es_implantable' },
@@ -119,7 +120,7 @@ SELECT s.Id AS id, s.Codigo AS codigo, s.Nombre AS nombre,
        em.Nombre AS empaque, s.CantidadPorCaja AS cant_caja,
        pr.Nombre AS proveedor, po.Nombre AS pais_origen,
        s.RegistroSanitarioEMB AS reg_sanitario, to_char(s.FechaVencimientoEMB, 'YYYY-MM-DD') AS fecha_venc,
-       s.Modelo AS modelo, s.Marca AS marca, s.ClasificacionProveedor AS clasif_prov,
+       mo.Nombre AS modelo, ma.Nombre AS marca, s.ClasificacionProveedor AS clasif_prov,
        ti.Nombre AS tipo_implante, ei.Nombre AS es_implantable,
        s.DescripcionDetallada AS desc_detallada, s.QueEs AS que_es, s.ParaQue AS para_que,
        s.Caracteristicas AS caracteristicas, s.Usos AS usos, qp.Nombre AS queda_paciente, s.Materiales AS materiales,
@@ -139,7 +140,9 @@ LEFT JOIN cat.Proveedor     pr ON pr.Id=s.ProveedorId
 LEFT JOIN cat.PaisOrigen    po ON po.Id=s.PaisOrigenId
 LEFT JOIN cat.TipoImplante  ti ON ti.Id=s.TipoImplanteId
 LEFT JOIN cat.OpcionSiNo    ei ON ei.Id=s.EsImplantableId
-LEFT JOIN cat.OpcionSiNo    qp ON qp.Id=s.QuedaPacienteId`;
+LEFT JOIN cat.OpcionSiNo    qp ON qp.Id=s.QuedaPacienteId
+LEFT JOIN cat.Modelo        mo ON mo.Id=s.ModeloId
+LEFT JOIN cat.Marca         ma ON ma.Id=s.MarcaId`;
 
 /* Resuelve el nombre de un catálogo a su Id (o null si viene vacío) */
 async function catId(table, name) {
@@ -163,6 +166,16 @@ async function familiaId(name, lineaIdVal) {
   if (!r.rows.length) throw new Error(`Familia no encontrada: "${name}"`);
   return r.rows[0].id;
 }
+async function modeloId(name) { return catId('cat.Modelo', name); }
+// La marca vive bajo un modelo, igual que la línea bajo el departamento.
+async function marcaId(name, modeloIdVal) {
+  if (!name) return null;
+  if (!modeloIdVal) throw new Error(`Para la marca "${name}" primero hay que indicar el Modelo`);
+  const r = await query(
+    `SELECT Id FROM cat.Marca WHERE Nombre=$1 AND ModeloId=$2 LIMIT 1`, [name, modeloIdVal]);
+  if (!r.rows.length) throw new Error(`Marca no encontrada: "${name}"`);
+  return r.rows[0].id;
+}
 
 /* Convierte el cuerpo del formulario en {columna: valor} listo para INSERT/UPDATE */
 async function resolveRecord(body) {
@@ -170,6 +183,8 @@ async function resolveRecord(body) {
   const dId = await depId(body.departamento);
   const lId = await lineaId(body.linea, dId);
   const fId = await familiaId(body.familia, lId);
+  const moId = await modeloId(body.modelo);
+  const maId = await marcaId(body.marca, moId);
   for (const f of FIELD_MAP) {
     const v = body[f.key];
     if (f.type === 'text')        out[f.col] = v ? String(v) : null;
@@ -179,6 +194,7 @@ async function resolveRecord(body) {
     else if (f.type === 'dep')    out[f.col] = dId;
     else if (f.type === 'linea')  out[f.col] = lId;
     else if (f.type === 'familia')out[f.col] = fId;
+    else if (f.type === 'marca')  out[f.col] = maId;
   }
   return out;
 }
@@ -245,6 +261,17 @@ app.http('catalogos', {
         `SELECT f.Nombre, l.Nombre AS lin FROM cat.Familia f
          JOIN cat.Linea l ON l.Id=f.LineaId WHERE f.Activo=true ORDER BY f.Nombre`)).rows;
 
+      // Modelos y sus marcas (jerarquía Modelo -> Marca, igual que Departamento -> Línea).
+      const modelosRows = (await query(
+        `SELECT Nombre FROM cat.Modelo WHERE Activo=true ORDER BY Nombre`)).rows;
+      const marcasRows = (await query(
+        `SELECT ma.Nombre, mo.Nombre AS modelo FROM cat.Marca ma
+         JOIN cat.Modelo mo ON mo.Id=ma.ModeloId WHERE ma.Activo=true ORDER BY ma.Nombre`)).rows;
+      const modelos = modelosRows.map(m => m.nombre);
+      const marcas = {};
+      modelos.forEach(m => marcas[m] = []);
+      marcasRows.forEach(m => { (marcas[m.modelo] = marcas[m.modelo] || []).push(m.nombre); });
+
       const dept_lines = {};
       deps.forEach(d => dept_lines[d.nombre] = []);
       lineas.forEach(l => { (dept_lines[l.dep] = dept_lines[l.dep] || []).push(l.nombre); });
@@ -263,6 +290,7 @@ app.http('catalogos', {
         departamentos: deps.map(d => d.nombre),
         dept_lines, familias: familiasMap,
         grupo_articulo, grupo_by_dept, grupo_centro,
+        modelos, marcas,
         centro_costo, unidades, empaque, tipo_implante,
         origen, proveedores, lote: sino, es_implantable: sino
       });
@@ -297,6 +325,10 @@ app.http('catalogo-add', {
         const dId = await depId(body.parentDept);
         const lId = await lineaId(body.parent, dId);
         await query(`INSERT INTO cat.Familia (LineaId, Nombre) VALUES ($1, $2)`, [lId, valor]);
+      } else if (tipo === 'marcas') {
+        const moId = await modeloId(body.parent);
+        if (!moId) return json(400, { error: 'Indique el Modelo al que pertenece la marca' });
+        await query(`INSERT INTO cat.Marca (ModeloId, Nombre) VALUES ($1, $2)`, [moId, valor]);
       } else if (tipo === 'grupo_articulo') {
         // Grupo de artículo ligado al Departamento (para el desplegable dependiente).
         const dId = body.parent ? await depId(body.parent) : null;
@@ -315,6 +347,29 @@ app.http('catalogo-add', {
   }
 });
 
+/* Tabla y filtro por nivel superior de un catálogo. En los catálogos jerárquicos
+   (línea, familia, marca) el mismo Nombre puede repetirse bajo distintos padres
+   —p. ej. la marca "ACME" en dos modelos—, así que editar o borrar SOLO por
+   nombre afectaría a todos. Cuando llega el padre, la operación se acota a él. */
+async function catScope(tipo, parent, parentDept) {
+  if (tipo === 'lineas') {
+    const t = { table: 'cat.Linea' };
+    if (parent) { t.col = 'DepartamentoId'; t.val = await depId(parent); }
+    return t;
+  }
+  if (tipo === 'familias') {
+    const t = { table: 'cat.Familia' };
+    if (parent) { t.col = 'LineaId'; t.val = await lineaId(parent, parentDept ? await depId(parentDept) : null); }
+    return t;
+  }
+  if (tipo === 'marcas') {
+    const t = { table: 'cat.Marca' };
+    if (parent) { t.col = 'ModeloId'; t.val = await modeloId(parent); }
+    return t;
+  }
+  return { table: CAT_TABLES[tipo] };
+}
+
 app.http('catalogo-edit', {
   methods: ['PUT'], authLevel: 'anonymous', route: 'catalogos/{tipo}/{valor}',
   handler: async (request, context) => {
@@ -325,12 +380,12 @@ app.http('catalogo-edit', {
       const body = await request.json();
       const nuevo = (body.nuevo || '').trim();
       if (!nuevo) return json(400, { error: 'Falta el nuevo valor' });
-      let table;
-      if (tipo === 'lineas') table = 'cat.Linea';
-      else if (tipo === 'familias') table = 'cat.Familia';
-      else table = CAT_TABLES[tipo];
-      if (!table) return json(400, { error: 'Catálogo desconocido' });
-      const r = await query(`UPDATE ${table} SET Nombre=$1 WHERE Nombre=$2`, [nuevo, actual]);
+      const sc = await catScope(tipo, body.parent, body.parentDept);
+      if (!sc.table) return json(400, { error: 'Catálogo desconocido' });
+      const params = [nuevo, actual];
+      let where = 'Nombre=$2';
+      if (sc.col) { params.push(sc.val); where += ` AND ${sc.col}=$${params.length}`; }
+      const r = await query(`UPDATE ${sc.table} SET Nombre=$1 WHERE ${where}`, params);
       return json(200, { ok: true, updated: r.rowCount });
     } catch (e) {
       context.error(e);
@@ -347,12 +402,12 @@ app.http('catalogo-delete', {
       if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
       const tipo = request.params.tipo;
       const valor = decodeURIComponent(request.params.valor);
-      let table;
-      if (tipo === 'lineas') table = 'cat.Linea';
-      else if (tipo === 'familias') table = 'cat.Familia';
-      else table = CAT_TABLES[tipo];
-      if (!table) return json(400, { error: 'Catálogo desconocido' });
-      await query(`DELETE FROM ${table} WHERE Nombre=$1`, [valor]);
+      const sc = await catScope(tipo, request.query.get('parent'), request.query.get('parentDept'));
+      if (!sc.table) return json(400, { error: 'Catálogo desconocido' });
+      const params = [valor];
+      let where = 'Nombre=$1';
+      if (sc.col) { params.push(sc.val); where += ` AND ${sc.col}=$${params.length}`; }
+      await query(`DELETE FROM ${sc.table} WHERE ${where}`, params);
       return json(200, { ok: true });
     } catch (e) {
       context.error(e);
@@ -744,6 +799,9 @@ app.http('orden-delete', {
 const MAX_MB = 5;
 const MAX_BYTES = MAX_MB * 1024 * 1024;
 const ADJ_MODULOS = ['codigos', 'ordenes'];
+// Máximo de archivos por registro (0 = sin límite). Debe coincidir con el
+// ADJ_MAX_POR_REGISTRO de frontend/index.html.
+const ADJ_MAX_POR_REGISTRO = 20;
 // Extensiones permitidas: PDF, imágenes, Word y Excel.
 const ADJ_EXT = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff',
                  'doc', 'docx', 'xls', 'xlsx', 'csv'];
@@ -759,8 +817,9 @@ const MIME_BY_EXT = {
 function extOf(nombre) { const m = String(nombre || '').toLowerCase().match(/\.([a-z0-9]+)$/); return m ? m[1] : ''; }
 const adjModuloOk = (m) => ADJ_MODULOS.includes(m);
 
-/* Metadatos del adjunto (para pintar el botón Ver/Descargar sin traer el archivo) */
-app.http('adjunto-meta', {
+/* Lista de adjuntos del registro (sin el contenido, para pintar la tabla).
+   Devuelve el arreglo ordenado del más antiguo al más reciente. */
+app.http('adjuntos-lista', {
   methods: ['GET'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}',
   handler: async (request, context) => {
     try {
@@ -768,12 +827,11 @@ app.http('adjunto-meta', {
       if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
       const id = parseInt(request.params.id, 10);
       const r = await query(
-        `SELECT NombreArchivo AS nombre, TipoMime AS tipo, Tamano AS tamano, SubidoPor AS subido_por,
-                to_char((FechaSubida AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha
-         FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
-      if (!r.rows.length) return json(200, { existe: false });
-      return json(200, { existe: true, ...r.rows[0] });
-    } catch (e) { context.error(e); return json(500, { error: 'Error al obtener el adjunto', detail: e.message }); }
+        `SELECT Id AS id, NombreArchivo AS nombre, TipoMime AS tipo, Tamano AS tamano, SubidoPor AS subido_por,
+                to_char((FechaSubida AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'DD/MM/YYYY HH24:MI') AS fecha
+         FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2 ORDER BY FechaSubida, Id`, [modulo, id]);
+      return json(200, { adjuntos: r.rows });
+    } catch (e) { context.error(e); return json(500, { error: 'Error al obtener los adjuntos', detail: e.message }); }
   }
 });
 
@@ -781,16 +839,20 @@ app.http('adjunto-meta', {
    Sin ?download -> inline (el navegador muestra PDF/imagen).
    Con ?download=1 -> attachment (fuerza la descarga; Word/Excel y demás). */
 app.http('adjunto-contenido', {
-  methods: ['GET'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}/contenido',
+  methods: ['GET'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}/{adjuntoId}/contenido',
   handler: async (request, context) => {
     try {
       const modulo = request.params.modulo;
       if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
       const id = parseInt(request.params.id, 10);
+      const adjuntoId = parseInt(request.params.adjuntoId, 10);
+      if (!Number.isInteger(adjuntoId)) return json(400, { error: 'Adjunto inválido' });
+      // Se exige también Modulo y RegistroId: así un Id de adjunto suelto no permite
+      // leer el archivo de otro registro.
       const r = await query(
         `SELECT NombreArchivo AS nombre, TipoMime AS tipo, Contenido AS contenido
-         FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
-      if (!r.rows.length) return json(404, { error: 'Sin archivo adjunto' });
+         FROM dbo.Adjunto WHERE Id=$1 AND Modulo=$2 AND RegistroId=$3`, [adjuntoId, modulo, id]);
+      if (!r.rows.length) return json(404, { error: 'Archivo no encontrado' });
       const row = r.rows[0];
       const buf = Buffer.from(row.contenido, 'base64');
       const mime = row.tipo || MIME_BY_EXT[extOf(row.nombre)] || 'application/octet-stream';
@@ -811,7 +873,7 @@ app.http('adjunto-contenido', {
   }
 });
 
-/* Subir o reemplazar el archivo del registro. Cualquier rol autenticado. */
+/* Agregar un archivo al registro. Cualquier rol autenticado; se acumulan (no se reemplazan). */
 app.http('adjunto-subir', {
   methods: ['POST'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}',
   handler: async (request, context) => {
@@ -834,30 +896,37 @@ app.http('adjunto-subir', {
       if (!buf.length) return json(400, { error: 'El archivo está vacío o es inválido' });
       if (buf.length > MAX_BYTES) return json(413, { error: `El archivo supera el máximo de ${MAX_MB} MB` });
       const mime = (body.tipo && String(body.tipo)) || MIME_BY_EXT[ext] || 'application/octet-stream';
-      await query(
+      if (ADJ_MAX_POR_REGISTRO > 0) {
+        const c = await query(`SELECT count(*)::int AS n FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
+        if (c.rows[0].n >= ADJ_MAX_POR_REGISTRO)
+          return json(409, { error: `El registro ya tiene ${ADJ_MAX_POR_REGISTRO} archivos adjuntos, que es el máximo. Elimine alguno para subir otro.` });
+      }
+      const ins = await query(
         `INSERT INTO dbo.Adjunto (Modulo, RegistroId, NombreArchivo, TipoMime, Tamano, Contenido, SubidoPor, FechaSubida)
          VALUES ($1, $2, $3, $4, $5, $6, $7, (now() at time zone 'utc'))
-         ON CONFLICT (Modulo, RegistroId) DO UPDATE
-            SET NombreArchivo = EXCLUDED.NombreArchivo, TipoMime = EXCLUDED.TipoMime,
-                Tamano = EXCLUDED.Tamano, Contenido = EXCLUDED.Contenido,
-                SubidoPor = EXCLUDED.SubidoPor, FechaSubida = EXCLUDED.FechaSubida`,
+         RETURNING Id`,
         [modulo, id, nombre, mime, buf.length, b64, user.name || user.email]);
-      return json(201, { ok: true, nombre, tipo: mime, tamano: buf.length });
+      return json(201, { ok: true, id: ins.rows[0].id, nombre, tipo: mime, tamano: buf.length });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo subir el archivo', detail: e.message }); }
   }
 });
 
-/* Eliminar el archivo del registro. Cualquier rol autenticado. */
+/* Eliminar UN archivo de la lista. Solo Compras y Administrador. */
 app.http('adjunto-eliminar', {
-  methods: ['DELETE'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}',
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'adjuntos/{modulo}/{id}/{adjuntoId}',
   handler: async (request, context) => {
     try {
       const user = getUser(request);
       if (!user) return json(401, { error: 'No autenticado' });
+      if (!puedeEditarEstado(await getRole(user)))
+        return json(403, { error: 'No tiene permiso para eliminar archivos adjuntos' });
       const modulo = request.params.modulo;
       if (!adjModuloOk(modulo)) return json(400, { error: 'Módulo inválido' });
       const id = parseInt(request.params.id, 10);
-      await query(`DELETE FROM dbo.Adjunto WHERE Modulo=$1 AND RegistroId=$2`, [modulo, id]);
+      const adjuntoId = parseInt(request.params.adjuntoId, 10);
+      if (!Number.isInteger(adjuntoId)) return json(400, { error: 'Adjunto inválido' });
+      const r = await query(`DELETE FROM dbo.Adjunto WHERE Id=$1 AND Modulo=$2 AND RegistroId=$3`, [adjuntoId, modulo, id]);
+      if (!r.rowCount) return json(404, { error: 'Archivo no encontrado' });
       return json(200, { ok: true });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar el archivo', detail: e.message }); }
   }
