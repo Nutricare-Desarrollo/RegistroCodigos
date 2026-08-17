@@ -25,9 +25,9 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 |--------|------------------------------|--------------------------------------|
 | GET    | /api/me                      | Usuario autenticado                  |
 | GET    | /api/catalogos               | Todas las listas desplegables        |
-| POST   | /api/catalogos/{tipo}        | Agregar opción a un catálogo         |
-| PUT    | /api/catalogos/{tipo}/{valor}| Editar opción                        |
-| DELETE | /api/catalogos/{tipo}/{valor}| Eliminar opción (bloquea si está en uso) |
+| POST   | /api/catalogos/{tipo}        | Agregar opción a un catálogo (`parent` en los jerárquicos) |
+| PUT    | /api/catalogos/{tipo}/{valor}| Editar opción (`parent` en el cuerpo acota al nivel superior) |
+| DELETE | /api/catalogos/{tipo}/{valor}| Eliminar opción (`?parent=` acota; bloquea si está en uso) |
 | GET    | /api/solicitudes             | Listado de registros                 |
 | GET    | /api/solicitudes/{id}        | Un registro completo                 |
 | POST   | /api/solicitudes             | Crear registro                       |
@@ -40,10 +40,10 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | POST   | /api/ordenes                 | Crear orden                          |
 | PUT    | /api/ordenes/{id}            | Actualizar orden                     |
 | DELETE | /api/ordenes/{id}            | Eliminar orden                       |
-| GET    | /api/adjuntos/{modulo}/{id}  | Metadatos del archivo adjunto (sin contenido) |
-| GET    | /api/adjuntos/{modulo}/{id}/contenido | Descarga el archivo (`?download=1` fuerza descarga) |
-| POST   | /api/adjuntos/{modulo}/{id}  | Subir/reemplazar el archivo (base64) |
-| DELETE | /api/adjuntos/{modulo}/{id}  | Quitar el archivo adjunto            |
+| GET    | /api/adjuntos/{modulo}/{id}  | Lista de archivos adjuntos del registro (sin contenido) |
+| GET    | /api/adjuntos/{modulo}/{id}/{adjuntoId}/contenido | Devuelve un archivo (`?download=1` fuerza descarga) |
+| POST   | /api/adjuntos/{modulo}/{id}  | Agregar un archivo al registro (base64) |
+| DELETE | /api/adjuntos/{modulo}/{id}/{adjuntoId} | Quitar un archivo (solo Compras/Administrador) |
 
 ## Puesta en marcha
 
@@ -62,6 +62,8 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V2_Estado_Roles.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V3_Ajustes_Codigos_Ordenes.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V4_Adjuntos.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V5_Conversiones.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V6_Modelo_Marca_Adjuntos_Multiples.sql
    ```
 3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
@@ -90,19 +92,47 @@ npm start
 npx @azure/static-web-apps-cli start frontend --api-location api
 ```
 
-## Archivo adjunto por registro
+## Archivos adjuntos por registro
 
-Al **editar** un registro (Códigos u Órdenes) se puede subir **un** archivo, que se
-guarda en la base de datos en **base64** (tabla `dbo.Adjunto`, un archivo por registro:
-al subir otro se reemplaza). Si es **PDF o imagen** se puede **Ver** en el navegador; si
-es **Word/Excel** (u otro no visualizable) se **Descarga**. Está disponible para **todos
-los roles** autenticados; en un registro en solo lectura (Procesado visto por rol General)
-solo se permite Ver/Descargar.
+Un registro (Códigos u Órdenes) admite **varios** archivos, guardados en la base de datos
+en **base64** (tabla `dbo.Adjunto`). Se pueden adjuntar tanto al **crear** el registro
+—se eligen en el formulario y se suben en cuanto el registro obtiene su Id— como al
+**editarlo**. Se muestran en una tabla con **Fecha y hora**, **Usuario**, **Archivo** y las
+acciones Ver / Descargar / Eliminar.
+
+Si el archivo es **PDF o imagen** se puede **Ver** en el navegador; si es **Word/Excel** (u otro
+no visualizable) solo se **Descarga**. En un registro en solo lectura (Procesado visto por el
+rol General) se puede Ver/Descargar pero no agregar.
 
 - **Tipos permitidos:** PDF, imagen (png/jpg/gif/webp/bmp/tiff), Word (doc/docx) y Excel (xls/xlsx/csv).
-- **Tamaño máximo:** definido por la constante `MAX_MB` (hoy **5 MB**). Para cambiarlo (p. ej.
-  a 10 MB) edite `MAX_MB` en **`api/src/index.js`** y en **`frontend/index.html`** y vuelva a
-  desplegar. La columna `Contenido` es `TEXT`, así que no requiere cambios en la base de datos.
+- **Tamaño máximo:** constante `MAX_MB` (hoy **5 MB**) por archivo.
+- **Cantidad máxima:** constante `ADJ_MAX_POR_REGISTRO` (hoy **20** archivos por registro; `0` = sin límite).
+- Para cambiar cualquiera de los dos límites, edite la constante en **`api/src/index.js`** y en
+  **`frontend/index.html`** y vuelva a desplegar. La columna `Contenido` es `TEXT`, así que no
+  requiere cambios en la base de datos.
+- **Permisos:** todos los roles autenticados pueden subir y ver; **eliminar** un adjunto queda
+  restringido a **Compras** y **Administrador**.
+
+## Modelo y Marca (Procesos Estadísticos)
+
+`Modelo` y `Marca` son **listas desplegables** con jerarquía **Modelo → Marca**: al elegir el
+modelo, la lista de marcas se filtra a las de ese modelo (mismo patrón que
+Departamento → Línea → Familia). Una misma marca puede existir bajo varios modelos.
+
+- **Modelo** se gestiona desde **Catálogos → Modelos**, o con el botón **＋** junto al campo.
+- **Marca** se gestiona con el botón **＋** junto al campo, que abre las marcas **del modelo
+  seleccionado** (igual que Línea y Familia).
+- Los botones **＋** solo aparecen para los roles **Compras** y **Administrador**.
+- La migración `V6` convierte los valores de texto que ya existían en registros de catálogo.
+  Si algún registro tenía Marca sin Modelo, esa marca queda bajo el modelo **"Sin modelo"** y
+  el script lo informa con un `NOTICE` para que se reasigne. Las columnas de texto
+  `Solicitud.Modelo` y `Solicitud.Marca` **no se eliminan**: quedan como respaldo histórico.
+
+## Centro de Costo
+
+En Códigos, cambiar **Departamento**, **Línea**, **Familia** o **Grupo Artículo** **limpia** el
+Centro de Costo, para que no quede un centro que ya no corresponde a la nueva clasificación
+contable. El usuario lo vuelve a elegir a mano.
 
 ## Seguridad
 - Las credenciales de PostgreSQL y el secret de Entra ID viven **solo** en las App

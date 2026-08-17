@@ -160,6 +160,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* Combo con búsqueda */
 #viewForm .card{overflow:visible}   /* que el panel del combo no se recorte */
 .adj-box{border:1px dashed var(--line);border-radius:10px;padding:14px;background:#fafcfe}
+/* La caja de adjuntos ocupa todo el ancho del formulario: la tabla tiene 4 columnas
+   y en una sola columna de la rejilla quedaba cortada. (.field.full no aplica aquí
+   porque .adj-box no es un .field.) */
+.adj-box.full{grid-column:1/-1}
 .adj-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .adj-name{font-weight:600;color:var(--brand-d);word-break:break-all}
 .adj-meta{color:var(--muted);font-size:12px}
@@ -469,8 +473,8 @@ const MODULES = {
         {key:"fecha_venc", label:"Fecha de Vencimiento del EMB", type:"date"},
       ]},
       {title:"Procesos Estadísticos", fields:[
-        {key:"modelo", label:"Modelo", type:"text", ph:"Si aplica"},
-        {key:"marca", label:"Marca", type:"text", ph:"Si aplica"},
+        {key:"modelo", label:"Modelo", type:"list", list:"modelos"},
+        {key:"marca", label:"Marca", type:"dependent", dependsOn:"modelo"},
       ]},
       {title:"Procesos de Calidad", fields:[
         {key:"clasif_prov", label:"Clasificación Proveedor", type:"text", ph:"Si aplica"},
@@ -519,7 +523,7 @@ const MODULES = {
     lists:{}, hier:{}, records:[]
   }
 };
-const LIST_LABELS = {departamentos:"Departamentos",grupo_articulo:"Grupo Artículo",centro_costo:"Centro de Costo",lote:"¿Lleva Lote?",unidades:"Unidades",empaque:"Empaque",proveedores:"Proveedores",origen:"País de Origen",tipo_implante:"Tipo Implante",es_implantable:"¿Es Implantable?",productos:"Productos",bodegas:"Bodegas",transporte:"Transporte",sector:"Sector"};
+const LIST_LABELS = {departamentos:"Departamentos",grupo_articulo:"Grupo Artículo",centro_costo:"Centro de Costo",lote:"¿Lleva Lote?",unidades:"Unidades",empaque:"Empaque",proveedores:"Proveedores",origen:"País de Origen",tipo_implante:"Tipo Implante",es_implantable:"¿Es Implantable?",modelos:"Modelos",marca:"Marcas (por Modelo)",productos:"Productos",bodegas:"Bodegas",transporte:"Transporte",sector:"Sector"};
 const MOD_LABELS = {codigos:"Creación de Códigos", ordenes:"Orden de Pedido"};
 
 let ACT="codigos";
@@ -603,9 +607,8 @@ function applyRoleVisibility(){
 async function loadCatalogsFor(id){
   const m=MODULES[id]; const c=await api('GET', m.api.cat);
   if(id==='codigos'){
-    m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable};
-    m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}};
-    m.grupoCentro=c.grupo_centro||{};
+    m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable,modelos:c.modelos||[]};
+    m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}, marca:{parent:"modelo", map:c.marcas||{}}};
   } else {
     m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector};
     m.hier={};
@@ -785,7 +788,7 @@ function ordCacheLoad(){ try{ return JSON.parse(localStorage.getItem('ord_defaul
 function ordCacheSave(rec){ try{ const o={}; ORD_CACHE_FIELDS.forEach(k=>o[k]=rec[k]||''); localStorage.setItem('ord_defaults', JSON.stringify(o)); }catch{} }
 async function openForm(id){
   editingId=id||null;
-  ADJ_PENDIENTE=null;                       // el adjunto pendiente no se arrastra de un formulario a otro
+  ADJ_PENDIENTES=[];                        // los adjuntos pendientes no se arrastran de un formulario a otro
   let rec={};
   if(id){ try{ rec=await api('GET', M().api.rec+'/'+id); }catch(e){ toast("No se pudo cargar: "+e.message); return; } }
   // Nueva orden: precargar valores frecuentes desde caché (no aplica al editar).
@@ -868,11 +871,11 @@ function buildForm(rec, readOnly){
   if(readOnly){
     c.querySelectorAll('input,select,textarea,button').forEach(el=>{ el.disabled=true; });
   }
-  // Archivo adjunto. Al EDITAR se consulta al servidor; en un registro NUEVO se elige aquí y se
-  // sube solo cuando se guarda (la API asocia el archivo a un Id que todavía no existe).
+  // Archivos adjuntos. Al EDITAR se consultan al servidor; en un registro NUEVO se eligen aquí
+  // y se suben solo cuando se guarda (la API los asocia a un Id que todavía no existe).
   // Se agrega después de deshabilitar, para que Ver/Descargar sigan activos en solo lectura.
   if(editingId || !readOnly){
-    const st=document.createElement('div'); st.className="section-title"; st.textContent="Archivo Adjunto"; c.appendChild(st);
+    const st=document.createElement('div'); st.className="section-title"; st.textContent="Archivos Adjuntos"; c.appendChild(st);
     const box=document.createElement('div'); box.className="adj-box full"; box.id="adjBox";
     box.innerHTML='<span class="adj-empty">Cargando…</span>';
     c.appendChild(box);
@@ -881,12 +884,16 @@ function buildForm(rec, readOnly){
   }
   // Órdenes: cálculo Cajas ↔ Unidades x Caja y Total (solo lectura).
   if(ACT==='ordenes' && !readOnly) wireOrdenConversion();
+  // Códigos: la clasificación contable limpia el Centro de Costo.
+  if(ACT==='codigos' && !readOnly) wireCentroCosto();
 }
-/* ====================== ARCHIVO ADJUNTO ======================
-   Un archivo por registro, guardado en base64. Disponible para todos los roles.
-   MAX_MB debe coincidir con el MAX_MB de api/src/index.js (para cambiarlo a 10,
-   editar el número en ambos y volver a desplegar). */
+/* ====================== ARCHIVOS ADJUNTOS ======================
+   VARIOS archivos por registro, guardados en base64. Todos los roles pueden subir
+   y ver; eliminar queda para Compras y Administrador.
+   MAX_MB y ADJ_MAX_POR_REGISTRO deben coincidir con los de api/src/index.js
+   (para cambiarlos, editar el número en ambos y volver a desplegar). */
 const MAX_MB = 5;
+const ADJ_MAX_POR_REGISTRO = 20;
 const ADJ_ACCEPT = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.doc,.docx,.xls,.xlsx,.csv";
 const ADJ_EXT_OK = ["pdf","png","jpg","jpeg","gif","webp","bmp","tif","tiff","doc","docx","xls","xlsx","csv"];
 const ADJ_IMG_EXT = ["png","jpg","jpeg","gif","webp","bmp","tif","tiff"];
@@ -905,81 +912,124 @@ async function adjLeerArchivo(file){
   const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error("No se pudo leer el archivo")); r.readAsDataURL(file); });
   return { nombre:file.name, tipo:file.type||"", contenido:String(dataUrl).split(',')[1]||"", tamano:file.size };
 }
-/* Registro NUEVO: el archivo elegido queda en memoria y se sube al crear el registro,
-   porque la API necesita el Id del registro para asociarlo. */
-let ADJ_PENDIENTE=null;
+
+/* Tabla de adjuntos: Fecha y hora · Usuario · Archivo · acciones.
+   `filas` son objetos {id?, nombre, tipo, tamano, fecha?, subido_por?}. Cuando no
+   traen id son archivos pendientes de un registro nuevo (todavía sin subir). */
+function adjTabla(filas, opciones){
+  const o = opciones || {};
+  let html = '<div class="tbl-wrap" style="border:1px solid var(--line);border-radius:9px;background:#fff">'
+    + '<table><thead><tr>'
+    + '<th style="width:150px">Fecha y hora</th><th style="width:220px">Usuario</th>'
+    + '<th>Archivo</th><th style="width:1%;text-align:right">Acciones</th>'
+    + '</tr></thead><tbody>';
+  filas.forEach((a, idx)=>{
+    const puedeVer = adjViewable(a.tipo, a.nombre);
+    let acc = '<div class="actions-cell" style="justify-content:flex-end">';
+    if(a.id){
+      if(puedeVer) acc += '<button type="button" class="btn-ghost btn-sm" onclick="verAdjunto(\''+o.modulo+'\','+o.registroId+','+a.id+',false)">👁 Ver</button>';
+      acc += '<button type="button" class="btn-ghost btn-sm" onclick="verAdjunto(\''+o.modulo+'\','+o.registroId+','+a.id+',true)">⬇ Descargar</button>';
+      if(o.puedeEliminar) acc += '<button type="button" class="btn-no btn-sm" onclick="eliminarAdjunto(\''+o.modulo+'\','+o.registroId+','+a.id+')">🗑 Eliminar</button>';
+    } else {
+      acc += '<button type="button" class="btn-no btn-sm" onclick="adjQuitarNuevo('+idx+')">🗑 Quitar</button>';
+    }
+    acc += '</div>';
+    html += '<tr>'
+      + '<td>'+esc(a.fecha || '—')+'</td>'
+      + '<td>'+esc(a.subido_por || '—')+'</td>'
+      + '<td>📎 <span class="adj-name">'+esc(a.nombre)+'</span> <span class="adj-meta">'+fmtBytes(a.tamano)+'</span></td>'
+      + '<td>'+acc+'</td></tr>';
+  });
+  return html + '</tbody></table></div>';
+}
+// Botón para elegir archivos (acepta varios a la vez) + la leyenda de límites.
+function adjSelector(onchange, cuantos, extra){
+  const lleno = cuantos >= ADJ_MAX_POR_REGISTRO;
+  return '<div class="adj-actions">'
+    + '<input type="file" id="adjFile" multiple accept="'+ADJ_ACCEPT+'" style="display:none" onchange="'+onchange+'">'
+    + '<button type="button" class="btn-primary btn-sm"'+(lleno?' disabled':'')+' onclick="document.getElementById(\'adjFile\').click()">Agregar archivos…</button>'
+    + '<span class="adj-meta">PDF, imagen, Word o Excel · máx '+MAX_MB+' MB por archivo · hasta '+ADJ_MAX_POR_REGISTRO+' archivos'
+    + (lleno ? ' · <b>ya alcanzó el máximo</b>' : '')
+    + (extra ? ' · '+extra : '') + '</span></div>';
+}
+
+/* ---- Registro NUEVO: los archivos quedan en memoria y se suben al crear el registro,
+       porque la API los asocia a un Id que todavía no existe. ---- */
+let ADJ_PENDIENTES=[];
 function renderAdjNuevo(){
   const box=document.getElementById('adjBox'); if(!box) return;
-  const picker='<input type="file" id="adjFile" accept="'+ADJ_ACCEPT+'" style="display:none" onchange="adjElegirNuevo(this)">';
-  let html='';
-  if(ADJ_PENDIENTE){
-    html='<div class="adj-row"><span>📎</span><span class="adj-name">'+esc(ADJ_PENDIENTE.nombre)+'</span>'
-       + '<span class="adj-meta">'+fmtBytes(ADJ_PENDIENTE.tamano)+'</span></div>'
-       + '<div class="adj-actions">'+picker
-       + '<button type="button" class="btn-ghost btn-sm" onclick="document.getElementById(\'adjFile\').click()">Cambiar archivo…</button>'
-       + '<button type="button" class="btn-no btn-sm" onclick="adjQuitarNuevo()">🗑 Quitar</button>'
-       + '<span class="adj-meta">Se adjunta al guardar el registro</span></div>';
-  } else {
-    html='<div class="adj-empty">Sin archivo adjunto.</div>'
-       + '<div class="adj-actions">'+picker
-       + '<button type="button" class="btn-primary btn-sm" onclick="document.getElementById(\'adjFile\').click()">Seleccionar archivo…</button>'
-       + '<span class="adj-meta">PDF, imagen, Word o Excel · máx '+MAX_MB+' MB · se adjunta al guardar</span></div>';
-  }
-  box.innerHTML=html;
+  const filas = ADJ_PENDIENTES.map(a=>({ nombre:a.nombre, tipo:a.tipo, tamano:a.tamano,
+                                         fecha:'Al guardar', subido_por:'Usted' }));
+  const cuerpo = ADJ_PENDIENTES.length
+    ? adjTabla(filas, {})
+    : '<div class="adj-empty">Sin archivos adjuntos.</div>';
+  box.innerHTML = cuerpo + adjSelector('adjElegirNuevo(this)', ADJ_PENDIENTES.length,
+                                       'se adjuntan al guardar el registro');
 }
 async function adjElegirNuevo(input){
-  const file=input.files && input.files[0]; if(!file) return;
-  try{ ADJ_PENDIENTE=await adjLeerArchivo(file); }
-  catch(e){ toast(e.message); input.value=""; return; }
+  const files=Array.from(input.files||[]); input.value="";
+  if(!files.length) return;
+  const errores=[];
+  for(const f of files){
+    if(ADJ_PENDIENTES.length >= ADJ_MAX_POR_REGISTRO){
+      errores.push('Se alcanzó el máximo de '+ADJ_MAX_POR_REGISTRO+' archivos; el resto no se agregó.');
+      break;
+    }
+    if(ADJ_PENDIENTES.some(a=>a.nombre===f.name)){ errores.push(f.name+': ya estaba en la lista'); continue; }
+    try{ ADJ_PENDIENTES.push(await adjLeerArchivo(f)); }
+    catch(e){ errores.push(f.name+': '+e.message); }
+  }
   renderAdjNuevo();
+  if(errores.length) toast(errores.join(' · '));
 }
-function adjQuitarNuevo(){ ADJ_PENDIENTE=null; renderAdjNuevo(); }
+function adjQuitarNuevo(idx){ ADJ_PENDIENTES.splice(idx,1); renderAdjNuevo(); }
+// Sube los archivos pendientes a un registro recién creado. Devuelve los que fallaron.
+async function adjSubirPendientes(modulo, registroId){
+  const fallidos=[];
+  for(const a of ADJ_PENDIENTES){
+    try{ await api('POST','/adjuntos/'+modulo+'/'+registroId, {nombre:a.nombre, tipo:a.tipo, contenido:a.contenido}); }
+    catch(e){ fallidos.push(a.nombre+' ('+e.message+')'); }
+  }
+  return fallidos;
+}
+
+/* ---- Registro EXISTENTE: la lista viene del servidor ---- */
 async function loadAdjunto(modulo, id, readOnly){
   const box=document.getElementById('adjBox'); if(!box) return;
-  let meta={existe:false};
-  try{ meta=await api('GET','/adjuntos/'+modulo+'/'+id); }
-  catch(e){ box.innerHTML='<span class="adj-empty">No se pudo cargar el adjunto.</span>'; return; }
-  let html='';
-  if(meta.existe){
-    const puedeVer=adjViewable(meta.tipo, meta.nombre);
-    html+='<div class="adj-row"><span>📎</span><span class="adj-name">'+esc(meta.nombre)+'</span>'
-        + '<span class="adj-meta">'+[fmtBytes(meta.tamano), meta.fecha?('· '+esc(meta.fecha)):''].filter(Boolean).join(' ')+'</span></div>';
-    html+='<div class="adj-actions">';
-    if(puedeVer) html+='<button type="button" class="btn-ghost btn-sm" onclick="verAdjunto(\''+modulo+'\','+id+',false)">👁 Ver</button>';
-    html+='<button type="button" class="btn-ghost btn-sm" onclick="verAdjunto(\''+modulo+'\','+id+',true)">⬇ Descargar</button>';
-    if(!readOnly) html+='<button type="button" class="btn-no btn-sm" onclick="eliminarAdjunto(\''+modulo+'\','+id+')">🗑 Eliminar</button>';
-    html+='</div>';
-  } else {
-    html+='<div class="adj-empty">Sin archivo adjunto.</div>';
-  }
-  if(!readOnly){
-    html+='<div class="adj-actions">'
-        + '<input type="file" id="adjFile" accept="'+ADJ_ACCEPT+'" style="display:none" onchange="uploadAdjunto(\''+modulo+'\','+id+',this)">'
-        + '<button type="button" class="btn-primary btn-sm" onclick="document.getElementById(\'adjFile\').click()">'+(meta.existe?'Reemplazar archivo…':'Seleccionar archivo…')+'</button>'
-        + '<span class="adj-meta">PDF, imagen, Word o Excel · máx '+MAX_MB+' MB</span></div>';
-  }
-  box.innerHTML=html;
+  let lista=[];
+  try{ const r=await api('GET','/adjuntos/'+modulo+'/'+id); lista=(r&&r.adjuntos)||[]; }
+  catch(e){ box.innerHTML='<span class="adj-empty">No se pudieron cargar los adjuntos.</span>'; return; }
+  const cuerpo = lista.length
+    ? adjTabla(lista, {modulo, registroId:id, puedeEliminar: !readOnly && canManageCat()})
+    : '<div class="adj-empty">Sin archivos adjuntos.</div>';
+  // En solo lectura se puede ver y descargar, pero no agregar.
+  box.innerHTML = cuerpo + (readOnly ? '' : adjSelector("uploadAdjunto('"+modulo+"',"+id+",this)", lista.length));
 }
-function verAdjunto(modulo,id,download){
-  window.open('/api/adjuntos/'+modulo+'/'+id+'/contenido'+(download?'?download=1':''), '_blank');
+function verAdjunto(modulo,registroId,adjuntoId,download){
+  window.open('/api/adjuntos/'+modulo+'/'+registroId+'/'+adjuntoId+'/contenido'+(download?'?download=1':''), '_blank');
 }
 async function uploadAdjunto(modulo,id,input){
-  const file=input.files && input.files[0]; if(!file) return;
-  let a;
-  try{ a=await adjLeerArchivo(file); }
-  catch(e){ toast(e.message); input.value=""; return; }
-  const box=document.getElementById('adjBox'); if(box) box.innerHTML='<span class="adj-empty">Subiendo…</span>';
-  try{
-    await api('POST','/adjuntos/'+modulo+'/'+id, { nombre:a.nombre, tipo:a.tipo, contenido:a.contenido });
-    toast("Archivo subido");
-  }catch(e){ toast("Error al subir: "+e.message); }
-  input.value="";
+  const files=Array.from(input.files||[]); input.value="";
+  if(!files.length) return;
+  const box=document.getElementById('adjBox');
+  if(box) box.innerHTML='<span class="adj-empty">Subiendo '+files.length+' archivo(s)…</span>';
+  const errores=[];
+  for(const f of files){
+    let a;
+    try{ a=await adjLeerArchivo(f); }
+    catch(e){ errores.push(f.name+': '+e.message); continue; }
+    try{ await api('POST','/adjuntos/'+modulo+'/'+id, {nombre:a.nombre, tipo:a.tipo, contenido:a.contenido}); }
+    catch(e){ errores.push(f.name+': '+e.message); }
+  }
+  const ok = files.length - errores.length;
+  if(ok) toast(ok===1 ? "Archivo subido" : ok+" archivos subidos");
+  if(errores.length) toast(errores.join(' · '));
   loadAdjunto(modulo,id,false);
 }
-async function eliminarAdjunto(modulo,id){
-  try{ await api('DELETE','/adjuntos/'+modulo+'/'+id); toast("Archivo eliminado"); }
+async function eliminarAdjunto(modulo,registroId,adjuntoId){
+  try{ await api('DELETE','/adjuntos/'+modulo+'/'+registroId+'/'+adjuntoId); toast("Archivo eliminado"); }
   catch(e){ toast("Error al eliminar: "+e.message); }
-  loadAdjunto(modulo,id,false);
+  loadAdjunto(modulo,registroId,false);
 }
 
 /* Combo con búsqueda "contiene": un input de texto para buscar/mostrar, un input
@@ -1016,7 +1066,9 @@ function makeCombo(id, options, val, cfg){
   });
   search.addEventListener('blur', ()=>{ setTimeout(()=>{ search.value=hidden.value||""; close(); },150); });
   const ctrl={ wrap, hidden, search,
-    setOptions(o){ curOptions=(o||[]).slice(); },
+    // Si el panel está abierto cuando cambian las opciones (p. ej. cambió el nivel
+    // superior), hay que redibujarlo: si no, quedaría mostrando las opciones viejas.
+    setOptions(o){ curOptions=(o||[]).slice(); if(!panel.classList.contains('hidden')) renderPanel(search.value); },
     getValue(){ return hidden.value; },
     setValue(v){ hidden.value=v||""; search.value=v||""; }
   };
@@ -1153,14 +1205,6 @@ function dependentSelect(f,rec){
     });
     refresh();
   },0);
-  // Grupo Artículo: al elegirlo, autocompleta el Centro de Costo relacionado (si existe).
-  if(f.key==='grupo_articulo'){
-    ctrl.hidden.addEventListener('change', ()=>{
-      const centro=(M().grupoCentro||{})[ctrl.getValue()];
-      const cc=document.getElementById('fld_centro_costo');
-      if(centro && cc && cc._combo) cc._combo.setValue(centro);
-    });
-  }
   row.appendChild(ctrl.wrap);
   if(canManageCat()){
     const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
@@ -1168,6 +1212,20 @@ function dependentSelect(f,rec){
     row.appendChild(plus);
   }
   return row;
+}
+
+/* Códigos: al cambiar Departamento, Línea, Familia o Grupo Artículo se limpia el
+   Centro de Costo, para que el usuario lo vuelva a elegir a conciencia y no quede
+   un centro que ya no corresponde a la nueva clasificación contable. */
+const CAMPOS_LIMPIAN_CENTRO = ['departamento','linea','familia','grupo_articulo'];
+function wireCentroCosto(){
+  const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
+  CAMPOS_LIMPIAN_CENTRO.forEach(k=>{
+    const el=document.getElementById('fld_'+k); if(!el) return;
+    el.addEventListener('change', ()=>{
+      if(cc._combo) cc._combo.setValue(""); else cc.value="";
+    });
+  });
 }
 
 /* ====================== GUARDAR ====================== */
@@ -1182,19 +1240,19 @@ async function saveRecord(){
     else{
       const r=await api('POST', M().api.rec, rec);
       const nuevoId = r && r.id;
-      // El archivo elegido en el formulario nuevo se sube ahora, ya con el Id del registro.
-      // Si falla, el registro NO se pierde: se avisa para adjuntarlo editándolo.
-      if(!ADJ_PENDIENTE) toast("Registro creado correctamente");
-      else if(!nuevoId) toast("Registro creado, pero no se pudo adjuntar el archivo. Adjúntelo editando el registro.");
+      // Los archivos elegidos en el formulario nuevo se suben ahora, ya con el Id del registro.
+      // Si alguno falla, el registro NO se pierde: se avisa cuáles quedaron fuera.
+      const n = ADJ_PENDIENTES.length;
+      if(!n) toast("Registro creado correctamente");
+      else if(!nuevoId) toast("Registro creado, pero no se pudieron adjuntar los archivos. Adjúntelos editando el registro.");
       else {
-        try{
-          await api('POST','/adjuntos/'+ACT+'/'+nuevoId, { nombre:ADJ_PENDIENTE.nombre, tipo:ADJ_PENDIENTE.tipo, contenido:ADJ_PENDIENTE.contenido });
-          toast("Registro creado con el archivo adjunto");
-        }catch(e){ toast("Registro creado, pero el archivo no se pudo adjuntar ("+e.message+"). Adjúntelo editando el registro."); }
+        const fallidos = await adjSubirPendientes(ACT, nuevoId);
+        if(!fallidos.length) toast("Registro creado con "+n+(n===1?" archivo adjunto":" archivos adjuntos"));
+        else toast("Registro creado. No se pudieron adjuntar: "+fallidos.join(' · ')+". Adjúntelos editando el registro.");
       }
     }
     if(ACT==='ordenes') ordCacheSave(rec);   // recuerda los últimos valores para la próxima orden nueva
-    editingId=null; ADJ_PENDIENTE=null; await loadRecords(); renderMain(); showGrid();
+    editingId=null; ADJ_PENDIENTES=[]; await loadRecords(); renderMain(); showGrid();
   }catch(e){ toast("Error al guardar: "+e.message); }
   finally{ btn.disabled=false; }
 }
@@ -1247,7 +1305,7 @@ function currentOptions(){
   if(curDependent) return curDependent.map[curDependent.parentVal] || [];
   return M().lists[curListKey] || [];
 }
-function currentTipo(){ if(curDependent){ if(curDependent.fieldKey==="linea")return "lineas"; if(curDependent.fieldKey==="familia")return "familias"; return curDependent.fieldKey; } return curListKey; }
+function currentTipo(){ if(curDependent){ if(curDependent.fieldKey==="linea")return "lineas"; if(curDependent.fieldKey==="familia")return "familias"; if(curDependent.fieldKey==="marca")return "marcas"; return curDependent.fieldKey; } return curListKey; }
 function renderOpt(){
   const manage=canManageCat();
   const addBtn=document.getElementById('optAddBtn'); if(addBtn) addBtn.classList.toggle('hidden', !manage);
@@ -1291,7 +1349,11 @@ async function saveOption(){
       await api('POST', base+'/'+encodeURIComponent(tipo), body); toast("Opción agregada");
     } else {
       const old=currentOptions()[editOptIdx];
-      await api('PUT', base+'/'+encodeURIComponent(tipo)+'/'+encodeURIComponent(old), {nuevo:v}); toast("Opción actualizada");
+      // En los catálogos jerárquicos se manda el nivel superior: el mismo nombre puede
+      // existir bajo otro padre y sin acotar se editarían todos.
+      const body={nuevo:v};
+      if(curDependent){ body.parent=curDependent.parentVal; if(curDependent.parentDept) body.parentDept=curDependent.parentDept; }
+      await api('PUT', base+'/'+encodeURIComponent(tipo)+'/'+encodeURIComponent(old), body); toast("Opción actualizada");
     }
     closeOptEdit();
     await loadCatalogsFor(ACT); renderOpt(); await loadRecords(); renderMain();
@@ -1299,7 +1361,13 @@ async function saveOption(){
 }
 async function deleteOption(idx){
   const old=currentOptions()[idx]; const tipo=currentTipo(); const base=M().api.catBase;
-  try{ await api('DELETE', base+'/'+encodeURIComponent(tipo)+'/'+encodeURIComponent(old)); toast("Opción eliminada"); await loadCatalogsFor(ACT); renderOpt(); }
+  // Igual que al editar: acotar al nivel superior en los catálogos jerárquicos.
+  let qs='';
+  if(curDependent){
+    qs='?parent='+encodeURIComponent(curDependent.parentVal);
+    if(curDependent.parentDept) qs+='&parentDept='+encodeURIComponent(curDependent.parentDept);
+  }
+  try{ await api('DELETE', base+'/'+encodeURIComponent(tipo)+'/'+encodeURIComponent(old)+qs); toast("Opción eliminada"); await loadCatalogsFor(ACT); renderOpt(); }
   catch(e){ toast(e.message); }
 }
 
