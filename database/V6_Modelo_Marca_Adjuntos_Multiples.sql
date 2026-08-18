@@ -27,6 +27,25 @@
      final el script informa cuántos casos hubo (RAISE NOTICE).
    ============================================================================ */
 
+/* ---------- 0. Verificación previa ----------
+   Aborta de una vez si la base actual no es la de la aplicación, para no dejar
+   tablas a medio crear en una base equivocada. Ejecute psql con
+   -v ON_ERROR_STOP=1 para que se detenga aquí. */
+DO $$
+BEGIN
+    IF to_regclass('dbo.Solicitud') IS NULL THEN
+        RAISE EXCEPTION
+          'V6 detenida: en la base "%" no existe dbo.Solicitud. Conéctese a la base de la aplicación (dbname=RegistroCodigos) y ejecute primero RegistroCodigos.sql, OrdenPedido.sql y V2..V5.',
+          current_database();
+    END IF;
+    IF to_regclass('dbo.Adjunto') IS NULL THEN
+        RAISE EXCEPTION
+          'V6 detenida: en la base "%" no existe dbo.Adjunto. Ejecute primero V4_Adjuntos.sql.',
+          current_database();
+    END IF;
+    RAISE NOTICE 'V6 -> base verificada: %', current_database();
+END $$;
+
 CREATE SCHEMA IF NOT EXISTS cat;
 CREATE SCHEMA IF NOT EXISTS dbo;
 
