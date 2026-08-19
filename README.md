@@ -152,7 +152,13 @@ cargas que tienen códigos sin registrar. Desde la bandeja se vuelve con **← V
 códigos**, que además refresca el listado por si se acaban de registrar códigos.
 
 El grid de cargas muestra **Fecha, Hora, Usuario, Archivo, cantidad de códigos y Estado**,
-ordenado del más reciente al más antiguo, con dos pestañas:
+ordenado del más reciente al más antiguo, con **fila de filtros** como los demás grids:
+rango **Desde/Hasta** en Fecha y filtro de texto ("contiene") en Hora, Usuario y Archivo.
+Códigos y Estado no llevan filtro (la cantidad no se busca por texto y el estado lo define la
+pestaña). El pie indica **"N cargas de M"** con un enlace **Quitar filtros** cuando hay alguno
+aplicado, y los filtros se limpian al salir y volver a entrar a la pantalla.
+
+Tiene dos pestañas:
 
 - **Pendientes de registrar** — cargas a las que les queda al menos un código sin registrar.
 - **Histórico registrado** — cargas cuyos códigos ya se registraron todos. Una carga pasa

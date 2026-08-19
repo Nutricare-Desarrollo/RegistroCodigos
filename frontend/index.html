@@ -196,6 +196,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .dash-total{border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-size:13px;color:var(--muted);display:flex}
 .dash-total b{margin-left:auto;color:var(--txt);font-size:15px}
 .grid-foot{padding:12px 16px;color:var(--muted);font-size:13px;font-weight:600;text-align:right}
+.grid-foot a{color:var(--brand);text-decoration:none;font-weight:700}.grid-foot a:hover{text-decoration:underline}
 .dash-card h3.clk{cursor:pointer}
 .dash-card h3.clk .go{color:var(--accent);opacity:0;transition:.15s}
 .dash-card h3.clk:hover{color:var(--brand)} .dash-card h3.clk:hover .go{opacity:1}
@@ -389,9 +390,9 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
           <button class="view-tab" id="tabCargaHist" onclick="setCargaView('Registrada')">Histórico registrado</button>
         </div>
         <div class="card">
+          <!-- El encabezado (con su fila de filtros) lo arma renderCargas, igual que en los otros grids. -->
           <div class="tbl-wrap"><table id="cargasTable">
-            <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Archivo</th>
-              <th>Códigos</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+            <thead id="cargasHead"></thead>
             <tbody id="cargasBody"></tbody></table></div>
           <div id="cargasEmpty" class="empty hidden"><div class="big">📥</div><div id="cargasEmptyTxt">No hay cargas pendientes de registrar.</div></div>
           <!-- Si la consulta falla NO se muestra "no hay cargas": se avisa que no se
@@ -1754,6 +1755,18 @@ function showImportResults(res){
 let CARGAS=[], CARGA_VIEW='Pendiente', CARGA=null, CARGA_COD=[], CARGA_SEL=new Set(), cargaCodId=null;
 // Columnas visibles del detalle (el resto de la información se ve en el modal).
 const CARGA_COLS=['codigo','nombre','departamento','familia','grupo_articulo','centro_costo'];
+/* Columnas del grid de cargas con su filtro, igual que en Códigos, Órdenes y
+   Conversiones. Códigos y Estado no llevan filtro: la cantidad no se busca por
+   texto y el estado ya lo define la pestaña. */
+const CARGAS_COLS=[
+  {k:'fecha',   l:'Fecha', dateRange:true},
+  {k:'hora',    l:'Hora'},
+  {k:'usuario', l:'Usuario'},
+  {k:'archivo', l:'Archivo'},
+  {k:'total',   l:'Códigos', noFilter:true},
+  {k:'estado',  l:'Estado',  noFilter:true}
+];
+let CARGA_FILTERS={};
 
 function codModule(){ return MODULES.codigos; }
 // El usuario puede entrar a Cargas sin haber pasado por Códigos: los catálogos
@@ -1768,6 +1781,7 @@ async function ensureCodCatalogs(){
 async function showCargas(){
   if(!canCargas()){ toast('Su rol no tiene acceso a las cargas'); showGrid(); return; }
   ACT='codigos';
+  CARGA_FILTERS={};                 // al entrar de nuevo, sin filtros arrastrados
   setNav('nav-codigos'); showOnly('viewCargas');
   await loadCargas();
 }
@@ -1801,7 +1815,8 @@ async function loadCargas(){
   document.getElementById('cargasEmpty').classList.add('hidden');
   fail.classList.add('hidden');
   document.getElementById('cargasFoot').classList.add('hidden');
-  b.innerHTML='<tr><td colspan="7" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
+  renderCargasHead();               // el encabezado y sus filtros se ven desde el inicio
+  b.innerHTML=`<tr><td colspan="${CARGAS_COLS.length+1}" style="padding:20px;color:var(--muted)">Cargando…</td></tr>`;
   try{ CARGAS=await api('GET','/cargas?estado='+encodeURIComponent(CARGA_VIEW)); }
   catch(e){
     // Falló la consulta: NO se pinta "no hay cargas" (haría creer que la carga
@@ -1818,9 +1833,55 @@ async function loadCargas(){
 function cargaBadge(est){
   return `<span class="badge ${est==='Registrada'?'badge-proc':'badge-pend'}">${esc(est)}</span>`;
 }
+/* Filtros del grid de cargas: texto "contiene" y rango de fechas, con el mismo
+   comportamiento que el grid de registros (ver filteredRecords). */
+function cargasFiltradas(){
+  return CARGAS.filter(c=>Object.keys(CARGA_FILTERS).every(k=>{
+    const flt=CARGA_FILTERS[k];
+    if(flt && typeof flt==='object'){                 // rango de fechas (YYYY-MM-DD)
+      const v=(c[k]==null?'':String(c[k])).slice(0,10);
+      if(flt.from && v < flt.from) return false;
+      if(flt.to   && v > flt.to)   return false;
+      return true;
+    }
+    const f=(flt||'').trim().toLowerCase(); if(!f) return true;
+    return String(c[k]==null?'':c[k]).toLowerCase().includes(f);
+  }));
+}
+function onCargaFilter(k,v){ CARGA_FILTERS[k]=v; renderCargasBody(); }
+function onCargaDateFilter(k,which,val){
+  const cur=(CARGA_FILTERS[k]&&typeof CARGA_FILTERS[k]==='object')?CARGA_FILTERS[k]:{};
+  cur[which]=val;
+  if(!cur.from && !cur.to) delete CARGA_FILTERS[k]; else CARGA_FILTERS[k]=cur;
+  renderCargasBody();
+}
+function limpiarFiltrosCargas(){ CARGA_FILTERS={}; renderCargas(); }
+// Encabezado + fila de filtros. Se arma aparte del cuerpo para no perder el foco
+// del campo que se está escribiendo cada vez que se refiltra.
+function renderCargasHead(){
+  const head=CARGAS_COLS.map(c=>`<th>${c.l}</th>`).join('')+'<th style="text-align:right">Acciones</th>';
+  const filtros=CARGAS_COLS.map(c=>{
+    if(c.noFilter) return '<th></th>';
+    if(c.dateRange){
+      const f=(CARGA_FILTERS[c.k]&&typeof CARGA_FILTERS[c.k]==='object')?CARGA_FILTERS[c.k]:{};
+      return `<th><div style="display:flex;gap:4px">`
+        +`<input type="date" title="Desde" onchange="onCargaDateFilter('${c.k}','from',this.value)" value="${attr(f.from)}">`
+        +`<input type="date" title="Hasta" onchange="onCargaDateFilter('${c.k}','to',this.value)" value="${attr(f.to)}"></div></th>`;
+    }
+    return `<th><input type="text" placeholder="Filtrar…" oninput="onCargaFilter('${c.k}',this.value)" value="${attr(CARGA_FILTERS[c.k])}"></th>`;
+  }).join('')+'<th></th>';
+  document.getElementById('cargasHead').innerHTML=`<tr>${head}</tr><tr class="filter-row">${filtros}</tr>`;
+}
 function renderCargas(){
+  renderCargasHead();
+  renderCargasBody();
+}
+function renderCargasBody(){
   const b=document.getElementById('cargasBody'); b.innerHTML='';
+  // El estado "vacío" con ícono es solo cuando no hay NINGUNA carga; si son los
+  // filtros los que no encuentran nada, la tabla y sus filtros siguen visibles.
   const vacio=CARGAS.length===0;
+  const rows=cargasFiltradas();
   document.getElementById('cargasFail').classList.add('hidden');
   document.getElementById('cargasTable').classList.toggle('hidden', vacio);
   document.getElementById('cargasEmpty').classList.toggle('hidden', !vacio);
@@ -1828,10 +1889,16 @@ function renderCargas(){
     ? 'No hay cargas pendientes de registrar.'
     : 'Todavía no hay cargas registradas por completo.';
   const foot=document.getElementById('cargasFoot');
-  foot.textContent = CARGAS.length===1 ? '1 carga' : (CARGAS.length+' cargas');
+  const filtrando=rows.length!==CARGAS.length;
+  foot.innerHTML = (rows.length===1 ? '1 carga' : (rows.length+' cargas'))
+    + (filtrando ? ` de ${CARGAS.length} · <a href="javascript:void(0)" onclick="limpiarFiltrosCargas()">Quitar filtros</a>` : '');
   foot.classList.toggle('hidden', vacio);
   if(vacio) return;
-  CARGAS.forEach(c=>{
+  if(rows.length===0){
+    b.innerHTML=`<tr><td colspan="${CARGAS_COLS.length+1}" style="text-align:center;color:var(--muted);padding:28px">No se encontraron cargas con los filtros aplicados.</td></tr>`;
+    return;
+  }
+  rows.forEach(c=>{
     const pend = c.estado==='Pendiente'
       ? `<span style="color:var(--muted)"> · ${c.pendientes} pendiente(s)</span>` : '';
     const err = c.con_error ? `<span class="err-txt">${c.con_error} con error</span>` : '';

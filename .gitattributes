@@ -1,0 +1,5 @@
+# Los scripts de Windows deben quedar con fin de línea CRLF, o cmd.exe puede
+# fallar al leerlos. Sin esta regla, git los guardaba con LF y aparecían como
+# "modificados" cada vez que se abrían en Windows.
+*.bat text eol=crlf
+*.cmd text eol=crlf
