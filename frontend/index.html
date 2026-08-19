@@ -610,17 +610,19 @@ const MODULES = {
     sections:[{title:"Solicitud de Orden de Pedido", fields:[
       {key:"codigo_producto", label:"Código del Producto", type:"list", list:"productos", req:true, full:true},
       {key:"descripcion", label:"Descripción del Producto", type:"text", req:true, full:true},
-      {key:"cajas", label:"Cajas", type:"number"},
-      {key:"unidades_caja", label:"Unidades x Caja", type:"number"},
-      {key:"total_unidades", label:"Total de Unidades", type:"number"},
-      {key:"bodega", label:"Bodega", type:"list", list:"bodegas"},
+      {key:"cajas", label:"Cajas", type:"number", req:true},
+      // Obligatoria, pero no se digita: la trae Conversiones al elegir el producto.
+      // Si el producto no tiene conversión, saveRecord avisa que hay que registrarla.
+      {key:"unidades_caja", label:"Unidades x Caja", type:"number", req:true},
+      {key:"total_unidades", label:"Total de Unidades", type:"number", req:true},
+      {key:"bodega", label:"Bodega", type:"list", list:"bodegas", req:true},
       {key:"proveedor", label:"Proveedor", type:"list", list:"proveedores", req:true},
       {key:"transporte", label:"Transporte", type:"list", list:"transporte"},
       {key:"sector", label:"Sector", type:"list", list:"sector"},
-      {key:"fecha_entrega", label:"Fecha de entrega al cliente", type:"date"},
+      {key:"fecha_entrega", label:"Fecha de entrega al cliente", type:"date", req:true},
       {key:"precio_especial", label:"Precio Especial", type:"number"},
-      {key:"num_emb", label:"Número de EMB", type:"text"},
-      {key:"fecha_venc_emb", label:"Fecha de Vencimiento de EMB", type:"date"},
+      {key:"num_emb", label:"Número de EMB", type:"text", req:true},
+      {key:"fecha_venc_emb", label:"Fecha de Vencimiento de EMB", type:"date", req:true},
       {key:"observaciones", label:"Observaciones", type:"textarea", full:true}
     ]}],
     lists:{}, hier:{}, records:[]
@@ -1419,6 +1421,12 @@ async function saveRecord(){
   const estEl=document.getElementById("fld_estado"); if(estEl) rec.estado=estEl.value;
   if(missing.length){
     marcarFaltantes(missingKeys);
+    // Órdenes: "Unidades x Caja" no se puede digitar (viene de Conversiones), así
+    // que si falta, el aviso tiene que decir qué hacer y no solo que falta.
+    if(ACT==='ordenes' && missingKeys.includes('unidades_caja')){
+      ordShowConvMsg('El producto seleccionado no tiene conversión registrada (Unidades x Caja). Regístrela en Conversiones para poder guardar la orden.');
+      if(missing.length===1){ toast('El producto no tiene conversión registrada: regístrela en Conversiones.'); return; }
+    }
     toast(missing.length===1
       ? 'Falta completar «'+missing[0]+'»'
       : 'Faltan '+missing.length+' campos obligatorios, marcados en rojo. El primero es «'+missing[0]+'».');

@@ -209,6 +209,24 @@ llegue al usuario:
   botón **Reintentar**, en vez del mensaje de "no hay cargas" — que hacía creer que la carga
   recién subida se había perdido.
 
+## Órdenes de Pedido: campos obligatorios
+
+En **Nuevo Registro** de Órdenes son obligatorios (asterisco rojo en la etiqueta y borde rojo si
+se intenta guardar sin ellos): **Código del Producto, Descripción del Producto, Cajas,
+Unidades x Caja, Total de Unidades, Bodega, Proveedor, Fecha de entrega al cliente,
+Número de EMB** y **Fecha de Vencimiento de EMB**. Opcionales: Transporte, Sector,
+Precio Especial y Observaciones.
+
+**Unidades x Caja** es obligatoria pero **no se digita**: la trae Conversiones al elegir el
+producto. Si ese producto no tiene conversión registrada, el campo queda vacío y al guardar el
+aviso lo dice y remite a **Conversiones** — no se muestra un "falta completar" que el usuario no
+podría resolver desde el formulario.
+
+Los obligatorios se declaran con `req:true` en `MODULES.ordenes.sections` (`frontend/index.html`).
+La API mantiene su propia validación mínima (`ORD_FIELDS` con `required`: producto, descripción y
+proveedor), a propósito: la carga masiva de Órdenes por Excel entra por el mismo endpoint y
+endurecerla ahí rechazaría filas que hoy sí se cargan.
+
 ## Centro de Costo
 
 En Códigos, cambiar **Departamento**, **Línea**, **Familia** o **Grupo Artículo** **limpia** el
