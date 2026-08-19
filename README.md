@@ -142,8 +142,14 @@ no se elige de una lista y no depende del Modelo. Se guarda en la columna de tex
 ## Cargas de Excel (bandeja de códigos)
 
 En **Creación de Códigos**, el Excel ya **no crea los registros de inmediato**: queda como una
-**carga** en la pantalla **Cargas de Excel** (visible para **Compras** y **Administrador**), con
-sus códigos en estado *Pendiente*. Órdenes de Pedido mantiene la carga directa de siempre.
+**carga** en la pantalla **Cargas de Excel**, con sus códigos en estado *Pendiente*. Órdenes de
+Pedido mantiene la carga directa de siempre.
+
+Se entra desde el **botón "📥 Cargas de Excel" que está junto a la pestaña "Procesadas"**, sobre
+el listado de Creación de Códigos (no está en el menú lateral, porque la bandeja pertenece a ese
+módulo). El botón solo lo ven **Compras** y **Administrador**, y muestra en rojo la cantidad de
+cargas que tienen códigos sin registrar. Desde la bandeja se vuelve con **← Volver al listado de
+códigos**, que además refresca el listado por si se acaban de registrar códigos.
 
 El grid de cargas muestra **Fecha, Hora, Usuario, Archivo, cantidad de códigos y Estado**,
 ordenado del más reciente al más antiguo, con dos pestañas:
@@ -168,6 +174,23 @@ Los obligatorios que se exigen al procesar son los mismos del formulario (consta
 
 Eliminar una carga borra sus códigos **pendientes**; los que ya se registraron en Códigos
 **no se tocan**.
+
+## Conexión a la base y fallos intermitentes
+
+Azure cierra las conexiones que quedan inactivas y el host de Functions se duerme cuando no
+hay tráfico, así que la **primera** llamada después de un rato podía fallar con
+"Connection terminated unexpectedly" y funcionar bien al reintentar. Para que eso no le
+llegue al usuario:
+
+- `api/src/db.js` usa `keepAlive`, baja el *idle* del pool a 10 s, atiende el evento `error`
+  del pool (una conexión muerta ya no puede tumbar el host) y **reintenta hasta 2 veces**
+  la consulta cuando el fallo es de conexión. Un error de datos (UNIQUE, campo inválido)
+  **no** se reintenta.
+- En el navegador, `api()` reintenta hasta 2 veces **solo los GET** (leer es idempotente:
+  repetirlo no crea ni cambia nada) ante error de red, 408, 429 o 5xx.
+- Si aun así falla, la bandeja de cargas muestra **"No se pudo cargar el listado"** con un
+  botón **Reintentar**, en vez del mensaje de "no hay cargas" — que hacía creer que la carga
+  recién subida se había perdido.
 
 ## Centro de Costo
 

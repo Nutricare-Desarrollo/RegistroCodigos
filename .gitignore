@@ -10,6 +10,10 @@ api/local.settings.json
 # Archivos temporales de build
 _frontend_*.html
 
+# Restos de herramientas (candados de git, pruebas) que no van al repositorio
+_to_delete/
+_tmp_probe_*
+
 # Sistema
 .DS_Store
 Thumbs.db

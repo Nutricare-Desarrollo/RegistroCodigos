@@ -105,6 +105,9 @@ button.tag:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .confirm-msg .rec{color:var(--muted);font-size:13px}
 .btn-danger{background:var(--danger);color:#fff;padding:10px 22px}.btn-danger:hover{background:var(--danger-d)}
 .btn-yes{background:var(--danger);color:#fff;padding:10px 26px}.btn-yes:hover{background:var(--danger-d)}
+/* Confirmación que NO destruye nada (p. ej. procesar códigos): mismo botón pero
+   en el color de la marca, para que no se lea como una acción de borrado. */
+.btn-yes.ok{background:var(--brand)}.btn-yes.ok:hover{background:var(--brand-d)}
 .btn-no{background:#fff;border:1px solid var(--line);color:var(--txt);padding:10px 26px}.btn-no:hover{border-color:var(--brand)}
 
 .opt-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
@@ -207,6 +210,14 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
 .err-txt{color:var(--danger);font-size:12px;white-space:normal;display:block;line-height:1.35}
 .carga-meta{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:4px}
 .carga-meta b{color:var(--txt)}
+/* Acceso a la bandeja desde el grid de Códigos: va en la misma fila que las
+   pestañas Pendientes/Procesadas, separado con una línea para que se lea como
+   otra pantalla y no como un tercer filtro del listado. */
+.tab-cargas{margin-left:10px;padding-left:16px;border-left:1px solid var(--line);border-radius:8px;display:inline-flex;align-items:center;gap:8px}
+.tab-cargas .cnt{background:var(--danger);color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px;line-height:1.5}
+/* Aviso de que no se pudo cargar un listado (distinto de "no hay datos"). */
+.load-fail{padding:26px 20px;text-align:center;color:var(--danger);font-size:14px}
+.load-fail .det{color:var(--muted);font-size:12.5px;margin:6px 0 12px;white-space:normal}
 
 </style>
 </head>
@@ -239,7 +250,8 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
         <div class="nav-item active" id="nav-inicio" onclick="showDashboard()"><span class="ic">🏠</span> Inicio</div>
         <div class="nav-item" id="nav-codigos" onclick="switchModule('codigos')"><span class="ic">🏷️</span> Creación de Códigos</div>
         <div class="nav-item" id="nav-ordenes" onclick="switchModule('ordenes')"><span class="ic">📦</span> Solicitud de Orden de Pedido</div>
-        <div class="nav-item hidden" id="nav-cargas" onclick="showCargas()"><span class="ic">📥</span> Cargas de Excel</div>
+        <!-- Cargas de Excel ya no vive en el menú: se entra desde el grid de
+             Creación de Códigos, con el botón que está junto a "Procesadas". -->
         <div class="nav-label">Configuración</div>
         <div class="nav-item hidden" id="nav-conversiones" onclick="showConversiones()"><span class="ic">🔁</span> Conversiones</div>
         <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
@@ -288,6 +300,11 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
         <div class="view-tabs" id="viewTabs">
           <button class="view-tab active" id="tabPend" onclick="setView('Pendiente')">Pendientes</button>
           <button class="view-tab" id="tabProc" onclick="setView('Procesado')">Procesadas</button>
+          <!-- Solo en Códigos y solo para Compras/Administrador (lo controla renderMain). -->
+          <button class="view-tab tab-cargas hidden" id="tabCargas" onclick="showCargas()"
+                  title="Archivos de Excel subidos y pendientes de registrar">
+            📥 Cargas de Excel<span class="cnt hidden" id="tabCargasCnt"></span>
+          </button>
         </div>
         <div class="card">
           <div class="tbl-wrap">
@@ -362,6 +379,7 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
         <div class="page-head">
           <div><h2>Cargas de Excel</h2><div class="sub">Archivos subidos y pendientes de registrar en Creación de Códigos</div></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-ghost" onclick="volverACodigos()">← Volver al listado de códigos</button>
             <button class="btn-ghost" onclick="loadCargas()">🔄 Actualizar</button>
             <button class="btn-primary" onclick="openImportCargas()">⬆ Subir Excel</button>
           </div>
@@ -376,6 +394,13 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
               <th>Códigos</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
             <tbody id="cargasBody"></tbody></table></div>
           <div id="cargasEmpty" class="empty hidden"><div class="big">📥</div><div id="cargasEmptyTxt">No hay cargas pendientes de registrar.</div></div>
+          <!-- Si la consulta falla NO se muestra "no hay cargas": se avisa que no se
+               pudo cargar, para no hacer creer que la carga que se acaba de subir se perdió. -->
+          <div id="cargasFail" class="load-fail hidden">
+            <div><b>⚠ No se pudo cargar el listado de cargas.</b></div>
+            <div class="det" id="cargasFailTxt"></div>
+            <button class="btn-primary" onclick="loadCargas()">🔄 Reintentar</button>
+          </div>
           <div class="grid-foot" id="cargasFoot"></div>
         </div>
       </section>
@@ -480,16 +505,16 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
 </div>
 <input type="file" id="importFile" accept=".xlsx,.xls" class="hidden" onchange="onImportFile(this)">
 
-<!-- ===== MODAL: confirmar eliminación ===== -->
+<!-- ===== MODAL: confirmación (título, icono y botón según la acción) ===== -->
 <div id="confirmModal" class="overlay hidden">
   <div class="modal sm">
-    <div class="modal-head"><h3>Confirmar eliminación</h3><button class="x" onclick="closeConfirm()">×</button></div>
-    <div class="modal-body"><div class="confirm-msg"><div class="ic">🗑️</div>
+    <div class="modal-head"><h3 id="confirmTitle">Confirmar eliminación</h3><button class="x" onclick="closeConfirm()">×</button></div>
+    <div class="modal-body"><div class="confirm-msg"><div class="ic" id="confirmIcon">🗑️</div>
       <p id="confirmText">¿Está seguro que desea eliminar el registro?</p>
       <div class="rec" id="confirmRec"></div></div></div>
     <div class="modal-foot" style="justify-content:center">
       <button class="btn-no" onclick="closeConfirm()">No</button>
-      <button class="btn-yes" onclick="confirmYes()">Sí, eliminar</button></div>
+      <button class="btn-yes" id="confirmOkBtn" onclick="confirmYes()">Sí, eliminar</button></div>
   </div>
 </div>
 
@@ -626,10 +651,32 @@ function isAdmin(){ return EFF_ROLE==='Administrador'; }
 function recordReadOnly(r){ return EFF_ROLE==='General' && (r&&(r.estado||'Pendiente'))==='Procesado'; }
 
 /* ====================== API ====================== */
+/* Reintento solo en GET (leer es idempotente: repetirlo no crea ni cambia nada).
+   Cubre el caso típico de Azure: la Function estaba dormida o la conexión a la
+   base se había cortado, la primera llamada falla y la siguiente ya responde. */
+const API_RETRIES=2, API_RETRY_MS=700;
+const puedeReintentar=(method,status)=> method==='GET' && (status===0 || status===408 || status===429 || status>=500);
 async function api(method, path, body){
+  let ultimo=null;
+  for(let intento=0; intento<=API_RETRIES; intento++){
+    try{ return await apiOnce(method, path, body); }
+    catch(e){
+      ultimo=e;
+      if(!(e.reintentable && intento<API_RETRIES)) throw e;
+      await new Promise(r=>setTimeout(r, API_RETRY_MS*(intento+1)));
+    }
+  }
+  throw ultimo;
+}
+async function apiOnce(method, path, body){
   const opt={method, headers:{}};
   if(body!==undefined){ opt.headers['Content-Type']='application/json'; opt.body=JSON.stringify(body); }
-  const res=await fetch('/api'+path, opt);
+  let res;
+  try{ res=await fetch('/api'+path, opt); }
+  catch(e){
+    // La petición no llegó (red caída, conexión cortada): en GET vale reintentar.
+    const err=new Error('No se pudo conectar con el servidor'); err.reintentable=puedeReintentar(method,0); throw err;
+  }
   let data=null; try{ data=await res.json(); }catch{}
   if(!res.ok){
     // Se muestran error Y detail: el "detail" trae el motivo real que devuelve la base
@@ -637,7 +684,10 @@ async function api(method, path, body){
     // mensajes como "No se pudo agregar" imposibles de diagnosticar.
     const msg=(data&&data.error)||('Error '+res.status);
     const det=(data&&data.detail&&data.detail!==msg)?(' — '+data.detail):'';
-    throw new Error(msg+det);
+    const err=new Error(msg+det);
+    err.status=res.status;
+    err.reintentable=puedeReintentar(method,res.status);
+    throw err;
   }
   return data;
 }
@@ -687,8 +737,8 @@ function onRoleSim(){
 }
 function applyRoleVisibility(){
   document.getElementById('nav-usuarios').classList.toggle('hidden', !isAdmin());
-  // Cargas de Excel: visible solo para Compras y Administrador.
-  document.getElementById('nav-cargas').classList.toggle('hidden', !canCargas());
+  // Cargas de Excel: el botón vive en el grid de Códigos (lo muestra renderMain,
+  // solo en ese módulo y solo para Compras/Administrador).
   // Catálogos: visible solo para Compras y Administrador.
   document.getElementById('nav-catalogos').classList.toggle('hidden', !canManageCat());
   // Conversiones: visible solo para Compras y Administrador.
@@ -792,6 +842,10 @@ function renderMain(){
   document.getElementById('addBtn').textContent="＋ "+m.addLabel;
   document.getElementById('tabPend').classList.toggle('active',VIEW_ESTADO==='Pendiente');
   document.getElementById('tabProc').classList.toggle('active',VIEW_ESTADO==='Procesado');
+  // Acceso a la bandeja de cargas: solo en Códigos y solo Compras/Administrador.
+  const verCargas = ACT==='codigos' && canCargas();
+  document.getElementById('tabCargas').classList.toggle('hidden', !verCargas);
+  if(verCargas) refreshCargasBadge();
   // Encabezados + fila de filtros por columna (la columna Estado no lleva filtro: se filtra con las pestañas)
   const headCols=m.gridCols.map(c=>`<th>${c.l}</th>`).join('')+'<th style="text-align:right">Acciones</th>';
   const filterCols=m.gridCols.map(c=>{
@@ -1397,15 +1451,31 @@ async function saveRecord(){
 let pendingDelete=null;
 function askDelete(id){
   pendingDelete=id; const r=M().records.find(x=>x.id===id); const c=M().gridCols;
+  confirmLook();   // borrado: título, icono y botón por defecto
   document.getElementById('confirmText').textContent="¿Está seguro que desea eliminar el registro?";
   document.getElementById('confirmRec').textContent = r? (esc(r[c[0].k])+" — "+esc(r[c[1]?c[1].k:c[0].k])):"";
   document.getElementById('confirmModal').classList.remove('hidden');
 }
 function closeConfirm(){ pendingDelete=null; CONFIRM_CB=null; document.getElementById('confirmModal').classList.add('hidden'); }
+
+/* Apariencia del modal de confirmación. Sin opciones queda como el de siempre
+   (eliminar); con opts se adapta a la acción, para que no diga "Confirmar
+   eliminación / Sí, eliminar" cuando lo que se va a hacer es otra cosa.
+   opts = { titulo, ok, icono, peligro:false } */
+function confirmLook(opts){
+  const o=opts||{};
+  document.getElementById('confirmTitle').textContent = o.titulo || 'Confirmar eliminación';
+  document.getElementById('confirmIcon').textContent  = o.icono  || '🗑️';
+  const btn=document.getElementById('confirmOkBtn');
+  btn.textContent = o.ok || 'Sí, eliminar';
+  // Rojo solo cuando la acción destruye algo; el resto en el color de la marca.
+  btn.classList.toggle('ok', o.peligro===false);
+}
 // Confirmación genérica reutilizable (además del borrado de registros de los módulos).
 let CONFIRM_CB=null;
-function askConfirmCB(text, recText, cb){
+function askConfirmCB(text, recText, cb, opts){
   CONFIRM_CB=cb;
+  confirmLook(opts);
   document.getElementById('confirmText').textContent=text||'¿Está seguro?';
   document.getElementById('confirmRec').textContent=recText||'';
   document.getElementById('confirmModal').classList.remove('hidden');
@@ -1693,10 +1763,30 @@ async function ensureCodCatalogs(){
   if(!l || !l.departamentos) { try{ await loadCatalogsFor('codigos'); }catch(e){} }
 }
 
+/* Se entra desde el grid de Códigos (botón junto a "Procesadas"), así que el
+   módulo activo pasa a ser Códigos y el menú lateral se queda en esa opción. */
 async function showCargas(){
   if(!canCargas()){ toast('Su rol no tiene acceso a las cargas'); showGrid(); return; }
-  setNav('nav-cargas'); showOnly('viewCargas');
+  ACT='codigos';
+  setNav('nav-codigos'); showOnly('viewCargas');
   await loadCargas();
+}
+// Volver al listado de códigos y refrescar por si se registraron códigos nuevos.
+async function volverACodigos(){
+  setNav('nav-codigos'); showOnly('viewGrid');
+  try{ await loadRecords(); }catch(e){}
+  renderMain();
+}
+/* Contador de cargas pendientes en el botón del grid. Es informativo: si falla
+   no molesta al usuario, solo esconde el número. */
+async function refreshCargasBadge(){
+  const b=document.getElementById('tabCargasCnt'); if(!b) return;
+  try{
+    const l=await api('GET','/cargas?estado=Pendiente');
+    const n=Array.isArray(l)?l.length:0;
+    b.textContent=n; b.classList.toggle('hidden', n===0);
+    b.title=n===1?'1 carga pendiente de registrar':n+' cargas pendientes de registrar';
+  }catch(e){ b.classList.add('hidden'); }
 }
 function setCargaView(v){
   CARGA_VIEW=v;
@@ -1706,9 +1796,23 @@ function setCargaView(v){
 }
 async function loadCargas(){
   const b=document.getElementById('cargasBody');
+  const fail=document.getElementById('cargasFail');
+  document.getElementById('cargasTable').classList.remove('hidden');
+  document.getElementById('cargasEmpty').classList.add('hidden');
+  fail.classList.add('hidden');
+  document.getElementById('cargasFoot').classList.add('hidden');
   b.innerHTML='<tr><td colspan="7" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
   try{ CARGAS=await api('GET','/cargas?estado='+encodeURIComponent(CARGA_VIEW)); }
-  catch(e){ CARGAS=[]; toast('Error al cargar las cargas: '+e.message); }
+  catch(e){
+    // Falló la consulta: NO se pinta "no hay cargas" (haría creer que la carga
+    // recién subida se perdió). Se muestra el aviso con el botón de reintentar.
+    CARGAS=[];
+    b.innerHTML='';
+    document.getElementById('cargasTable').classList.add('hidden');
+    document.getElementById('cargasFailTxt').textContent=e.message;
+    fail.classList.remove('hidden');
+    return;
+  }
   renderCargas();
 }
 function cargaBadge(est){
@@ -1717,6 +1821,7 @@ function cargaBadge(est){
 function renderCargas(){
   const b=document.getElementById('cargasBody'); b.innerHTML='';
   const vacio=CARGAS.length===0;
+  document.getElementById('cargasFail').classList.add('hidden');
   document.getElementById('cargasTable').classList.toggle('hidden', vacio);
   document.getElementById('cargasEmpty').classList.toggle('hidden', !vacio);
   document.getElementById('cargasEmptyTxt').textContent = CARGA_VIEW==='Pendiente'
@@ -1759,7 +1864,7 @@ async function openCarga(id){
     CARGA=r.carga; CARGA_COD=r.codigos||[];
   }catch(e){ toast('Error al abrir la carga: '+e.message); return; }
   CARGA_SEL=new Set();
-  setNav('nav-cargas'); showOnly('viewCargaDet');
+  setNav('nav-codigos'); showOnly('viewCargaDet');
   renderCargaDet();
 }
 async function openCargaKeepSel(id){
@@ -1845,7 +1950,9 @@ function cargaProcesarMarcados(){
         return;
       }
       await openCargaKeepSel(CARGA.id);
-    });
+    },
+    // No es un borrado: título, icono y botón propios de la acción.
+    {titulo:'Procesar códigos seleccionados', ok:'Sí, procesar', icono:'🏷️', peligro:false});
 }
 
 /* ---------- Modal: el resto de la información del código ---------- */
