@@ -113,6 +113,8 @@ button.tag:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--brand-d);color:#fff;padding:12px 22px;border-radius:10px;box-shadow:var(--shadow);z-index:100;font-size:13.5px;animation:pop .3s}
 @keyframes pop{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1}}
 .req{color:var(--danger)}
+/* Campo obligatorio sin llenar, tras intentar guardar. */
+.campo-falta{border-color:var(--danger)!important;box-shadow:0 0 0 3px rgba(192,57,43,.13)}
 
 
 /* ===== LAYOUT MULTI-MÓDULO (menú lateral Nutricare) ===== */
@@ -453,28 +455,28 @@ const MODULES = {
         {key:"departamento", label:"Departamento", type:"list", list:"departamentos", req:true},
         {key:"linea", label:"Línea", type:"dependent", dependsOn:"departamento", req:true},
         {key:"familia", label:"Familia", type:"dependent", dependsOn:"linea", req:true},
-        {key:"grupo_articulo", label:"Grupo Artículo", type:"dependent", dependsOn:"departamento"},
-        {key:"centro_costo", label:"Centro de Costo", type:"list", list:"centro_costo"},
+        {key:"grupo_articulo", label:"Grupo Artículo", type:"dependent", dependsOn:"departamento", req:true},
+        {key:"centro_costo", label:"Centro de Costo", type:"list", list:"centro_costo", req:true},
       ]},
       {title:"Procesos de Almacenamiento e Inventarios", fields:[
-        {key:"lote", label:"¿Lleva Lote?", type:"list", list:"lote"},
-        {key:"unidad_inv", label:"Unidad de Inventario", type:"list", list:"unidades"},
-        {key:"unidad_compra", label:"Unidad de Compra", type:"list", list:"unidades"},
-        {key:"unidad_venta", label:"Unidad de Venta", type:"list", list:"unidades"},
-        {key:"empaque", label:"Empaque", type:"list", list:"empaque"},
-        {key:"cant_caja", label:"Cantidad de Unidades por caja", type:"number"},
+        {key:"lote", label:"¿Lleva Lote?", type:"list", list:"lote", req:true},
+        {key:"unidad_inv", label:"Unidad de Inventario", type:"list", list:"unidades", req:true},
+        {key:"unidad_compra", label:"Unidad de Compra", type:"list", list:"unidades", req:true},
+        {key:"unidad_venta", label:"Unidad de Venta", type:"list", list:"unidades", req:true},
+        {key:"empaque", label:"Empaque", type:"list", list:"empaque", req:true},
+        {key:"cant_caja", label:"Cantidad de Unidades por caja", type:"number", req:true},
       ]},
       {title:"Procesos de Compras e Importaciones", fields:[
         {key:"proveedor", label:"Proveedor", type:"list", list:"proveedores", req:true},
         {key:"pais_origen", label:"País de Origen", type:"list", list:"origen", req:true},
       ]},
       {title:"Registros Sanitarios", fields:[
-        {key:"reg_sanitario", label:"Número de Registro Sanitario EMB", type:"text"},
-        {key:"fecha_venc", label:"Fecha de Vencimiento del EMB", type:"date"},
+        {key:"reg_sanitario", label:"Número de Registro Sanitario EMB", type:"text", req:true},
+        {key:"fecha_venc", label:"Fecha de Vencimiento del EMB", type:"date", req:true},
       ]},
       {title:"Procesos Estadísticos", fields:[
-        {key:"modelo", label:"Modelo", type:"list", list:"modelos"},
-        {key:"marca", label:"Marca", type:"dependent", dependsOn:"modelo"},
+        {key:"modelo", label:"Modelo", type:"list", list:"modelos", req:true},
+        {key:"marca", label:"Marca", type:"dependent", dependsOn:"modelo", req:true},
       ]},
       {title:"Procesos de Calidad", fields:[
         {key:"clasif_prov", label:"Clasificación Proveedor", type:"text", ph:"Si aplica"},
@@ -482,13 +484,13 @@ const MODULES = {
         {key:"es_implantable", label:"¿Es Implantable?", type:"list", list:"es_implantable"},
       ]},
       {title:"Descripción del Producto", fields:[
-        {key:"desc_detallada", label:"Descripción Detallada del Producto", type:"textarea", full:true},
-        {key:"que_es", label:"¿Qué es?", type:"textarea"},
-        {key:"para_que", label:"¿Para qué es?", type:"textarea"},
-        {key:"caracteristicas", label:"Características", type:"textarea"},
-        {key:"usos", label:"Usos", type:"textarea"},
-        {key:"queda_paciente", label:"Se queda en el paciente", type:"list", list:"es_implantable"},
-        {key:"materiales", label:"Materiales", type:"text"},
+        {key:"desc_detallada", label:"Descripción Detallada del Producto", type:"textarea", full:true, req:true},
+        {key:"que_es", label:"¿Qué es?", type:"textarea", req:true},
+        {key:"para_que", label:"¿Para qué es?", type:"textarea", req:true},
+        {key:"caracteristicas", label:"Características", type:"textarea", req:true},
+        {key:"usos", label:"Usos", type:"textarea", req:true},
+        {key:"queda_paciente", label:"Se queda en el paciente", type:"list", list:"es_implantable", req:true},
+        {key:"materiales", label:"Materiales", type:"text", req:true},
       ]},
     ],
     lists:{}, hier:{}, records:[]
@@ -550,7 +552,14 @@ async function api(method, path, body){
   if(body!==undefined){ opt.headers['Content-Type']='application/json'; opt.body=JSON.stringify(body); }
   const res=await fetch('/api'+path, opt);
   let data=null; try{ data=await res.json(); }catch{}
-  if(!res.ok){ throw new Error((data&&(data.error||data.detail))||('Error '+res.status)); }
+  if(!res.ok){
+    // Se muestran error Y detail: el "detail" trae el motivo real que devuelve la base
+    // (tabla que no existe, permiso denegado, etc.) y antes se descartaba, dejando
+    // mensajes como "No se pudo agregar" imposibles de diagnosticar.
+    const msg=(data&&data.error)||('Error '+res.status);
+    const det=(data&&data.detail&&data.detail!==msg)?(' — '+data.detail):'';
+    throw new Error(msg+det);
+  }
   return data;
 }
 
@@ -886,6 +895,7 @@ function buildForm(rec, readOnly){
   if(ACT==='ordenes' && !readOnly) wireOrdenConversion();
   // Códigos: la clasificación contable limpia el Centro de Costo.
   if(ACT==='codigos' && !readOnly) wireCentroCosto();
+  wireLimpiarMarcas();
 }
 /* ====================== ARCHIVOS ADJUNTOS ======================
    VARIOS archivos por registro, guardados en base64. Todos los roles pueden subir
@@ -1228,12 +1238,55 @@ function wireCentroCosto(){
   });
 }
 
+/* Marca en rojo los obligatorios que faltan y lleva al primero. Con 26 campos
+   obligatorios en Códigos, enumerar todos los nombres en un aviso era ilegible:
+   el usuario necesita ver DÓNDE están, no leer una lista. */
+function marcarFaltantes(keys){
+  document.querySelectorAll('#formFields .campo-falta').forEach(e=>e.classList.remove('campo-falta'));
+  let primero=null;
+  keys.forEach(k=>{
+    const h=document.getElementById('fld_'+k); if(!h) return;
+    // En los combos el control visible es el buscador que sigue al input oculto.
+    const vis=(h.type==='hidden' && h.nextElementSibling) ? h.nextElementSibling : h;
+    vis.classList.add('campo-falta');
+    if(!primero) primero=vis;
+  });
+  if(primero){
+    primero.scrollIntoView({behavior:'smooth', block:'center'});
+    setTimeout(()=>{ try{ primero.focus({preventScroll:true}); }catch(e){} }, 300);
+  }
+}
+// Al completar un campo marcado, se le quita la marca sin esperar a guardar de nuevo.
+function limpiarMarcas(){
+  document.querySelectorAll('#formFields .campo-falta').forEach(vis=>{
+    const h=vis.classList.contains('cmb-input') ? vis.previousElementSibling : vis;
+    if(h && String(h.value||'').trim()) vis.classList.remove('campo-falta');
+  });
+}
+let marcasWired=false;
+function wireLimpiarMarcas(){
+  if(marcasWired) return; marcasWired=true;
+  const c=document.getElementById('formFields'); if(!c) return;
+  c.addEventListener('input', limpiarMarcas);
+  c.addEventListener('change', limpiarMarcas);
+}
+
 /* ====================== GUARDAR ====================== */
 async function saveRecord(){
-  const rec={}; const missing=[];
-  allFields().forEach(f=>{ const el=document.getElementById("fld_"+f.key); const v=el?el.value.trim():""; if(f.req&&!v)missing.push(f.label); rec[f.key]=v; });
+  const rec={}; const missing=[]; const missingKeys=[];
+  allFields().forEach(f=>{
+    const el=document.getElementById("fld_"+f.key); const v=el?el.value.trim():"";
+    if(f.req&&!v){ missing.push(f.label); missingKeys.push(f.key); }
+    rec[f.key]=v;
+  });
   const estEl=document.getElementById("fld_estado"); if(estEl) rec.estado=estEl.value;
-  if(missing.length){ toast("Complete los campos obligatorios: "+missing.join(", ")); return; }
+  if(missing.length){
+    marcarFaltantes(missingKeys);
+    toast(missing.length===1
+      ? 'Falta completar «'+missing[0]+'»'
+      : 'Faltan '+missing.length+' campos obligatorios, marcados en rojo. El primero es «'+missing[0]+'».');
+    return;
+  }
   const btn=document.getElementById('formSaveBtn'); btn.disabled=true;
   try{
     if(editingId){ await api('PUT', M().api.rec+'/'+editingId, rec); toast("Registro actualizado correctamente"); }
