@@ -476,7 +476,7 @@ const MODULES = {
       ]},
       {title:"Procesos Estadísticos", fields:[
         {key:"modelo", label:"Modelo", type:"list", list:"modelos", req:true},
-        {key:"marca", label:"Marca", type:"dependent", dependsOn:"modelo", req:true},
+        {key:"marca", label:"Marca", type:"text", max:150, req:true},
       ]},
       {title:"Procesos de Calidad", fields:[
         {key:"clasif_prov", label:"Clasificación Proveedor", type:"text", ph:"Si aplica"},
@@ -525,7 +525,7 @@ const MODULES = {
     lists:{}, hier:{}, records:[]
   }
 };
-const LIST_LABELS = {departamentos:"Departamentos",grupo_articulo:"Grupo Artículo",centro_costo:"Centro de Costo",lote:"¿Lleva Lote?",unidades:"Unidades",empaque:"Empaque",proveedores:"Proveedores",origen:"País de Origen",tipo_implante:"Tipo Implante",es_implantable:"¿Es Implantable?",modelos:"Modelos",marca:"Marcas (por Modelo)",productos:"Productos",bodegas:"Bodegas",transporte:"Transporte",sector:"Sector"};
+const LIST_LABELS = {departamentos:"Departamentos",grupo_articulo:"Grupo Artículo",centro_costo:"Centro de Costo",lote:"¿Lleva Lote?",unidades:"Unidades",empaque:"Empaque",proveedores:"Proveedores",origen:"País de Origen",tipo_implante:"Tipo Implante",es_implantable:"¿Es Implantable?",modelos:"Modelos",productos:"Productos",bodegas:"Bodegas",transporte:"Transporte",sector:"Sector"};
 const MOD_LABELS = {codigos:"Creación de Códigos", ordenes:"Orden de Pedido"};
 
 let ACT="codigos";
@@ -617,7 +617,7 @@ async function loadCatalogsFor(id){
   const m=MODULES[id]; const c=await api('GET', m.api.cat);
   if(id==='codigos'){
     m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable,modelos:c.modelos||[]};
-    m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}, marca:{parent:"modelo", map:c.marcas||{}}};
+    m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}};
   } else {
     m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector};
     m.hier={};
@@ -863,7 +863,7 @@ function buildForm(rec, readOnly){
       if(f.type==="list") wrap.appendChild(comboWithPlus(f,val));
       else if(f.type==="dependent") wrap.appendChild(dependentSelect(f,rec));
       else if(f.type==="textarea"){ const t=document.createElement('textarea');t.rows=3;t.id="fld_"+f.key;t.value=val;wrap.appendChild(t); }
-      else { const i=document.createElement('input'); i.type=f.type==="number"?"number":f.type==="date"?"date":"text"; i.id="fld_"+f.key; i.value=val; if(f.ph) i.placeholder=f.ph; wrap.appendChild(i); }
+      else { const i=document.createElement('input'); i.type=f.type==="number"?"number":f.type==="date"?"date":"text"; i.id="fld_"+f.key; i.value=val; if(f.ph) i.placeholder=f.ph; if(f.max) i.maxLength=f.max; wrap.appendChild(i); }
       c.appendChild(wrap);
     });
   });

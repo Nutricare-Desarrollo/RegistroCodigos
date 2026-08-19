@@ -115,18 +115,21 @@ rol General) se puede Ver/Descargar pero no agregar.
 
 ## Modelo y Marca (Procesos Estadísticos)
 
-`Modelo` y `Marca` son **listas desplegables** con jerarquía **Modelo → Marca**: al elegir el
-modelo, la lista de marcas se filtra a las de ese modelo (mismo patrón que
-Departamento → Línea → Familia). Una misma marca puede existir bajo varios modelos.
+`Modelo` es una **lista desplegable**; se gestiona desde **Catálogos → Modelos**, o con el
+botón **＋** junto al campo (visible solo para **Compras** y **Administrador**).
 
-- **Modelo** se gestiona desde **Catálogos → Modelos**, o con el botón **＋** junto al campo.
-- **Marca** se gestiona con el botón **＋** junto al campo, que abre las marcas **del modelo
-  seleccionado** (igual que Línea y Familia).
-- Los botones **＋** solo aparecen para los roles **Compras** y **Administrador**.
-- La migración `V6` convierte los valores de texto que ya existían en registros de catálogo.
-  Si algún registro tenía Marca sin Modelo, esa marca queda bajo el modelo **"Sin modelo"** y
-  el script lo informa con un `NOTICE` para que se reasigne. Las columnas de texto
-  `Solicitud.Modelo` y `Solicitud.Marca` **no se eliminan**: quedan como respaldo histórico.
+`Marca` es una **caja de texto libre** (máximo 150 caracteres): el usuario escribe el valor,
+no se elige de una lista y no depende del Modelo. Se guarda en la columna de texto
+`dbo.Solicitud.Marca` y el guardado deja `MarcaId` en `NULL`.
+
+- El catálogo `cat.Marca` y sus endpoints **siguen existiendo** en la base y en la API, pero
+  el módulo de Códigos ya no los usa; no hace falta ninguna migración para este cambio.
+- Los registros anteriores al cambio conservan su `MarcaId`: la lectura hace
+  `COALESCE(ma.Nombre, s.Marca)`, así que muestran el nombre del catálogo hasta que se
+  vuelvan a guardar, momento en que pasan a texto.
+- La migración `V6` había convertido los valores de texto en registros de catálogo. Las
+  columnas de texto `Solicitud.Modelo` y `Solicitud.Marca` **no se eliminaron**, que es lo
+  que permite volver a texto sin tocar la base.
 
 ## Centro de Costo
 

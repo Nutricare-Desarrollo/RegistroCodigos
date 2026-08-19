@@ -98,7 +98,10 @@ const FIELD_MAP = [
   { key: 'reg_sanitario',  col: 'RegistroSanitarioEMB',   type: 'text' },
   { key: 'fecha_venc',     col: 'FechaVencimientoEMB',    type: 'date' },
   { key: 'modelo',         col: 'ModeloId',               type: 'cat', cat: 'modelos' },
-  { key: 'marca',          col: 'MarcaId',                type: 'marca' },
+  { key: 'marca',          col: 'Marca',                  type: 'text' },
+  // Marca es texto libre: se limpia MarcaId para que no quede el valor viejo
+  // del catalogo (cat.Marca sigue existiendo, solo dejo de usarse en Codigos).
+  { key: '__marca_id',     col: 'MarcaId',                type: 'null' },
   { key: 'clasif_prov',    col: 'ClasificacionProveedor', type: 'text' },
   { key: 'tipo_implante',  col: 'TipoImplanteId',         type: 'cat', cat: 'tipo_implante' },
   { key: 'es_implantable', col: 'EsImplantableId',        type: 'cat', cat: 'es_implantable' },
@@ -120,7 +123,7 @@ SELECT s.Id AS id, s.Codigo AS codigo, s.Nombre AS nombre,
        em.Nombre AS empaque, s.CantidadPorCaja AS cant_caja,
        pr.Nombre AS proveedor, po.Nombre AS pais_origen,
        s.RegistroSanitarioEMB AS reg_sanitario, to_char(s.FechaVencimientoEMB, 'YYYY-MM-DD') AS fecha_venc,
-       mo.Nombre AS modelo, ma.Nombre AS marca, s.ClasificacionProveedor AS clasif_prov,
+       mo.Nombre AS modelo, COALESCE(ma.Nombre, s.Marca) AS marca, s.ClasificacionProveedor AS clasif_prov,
        ti.Nombre AS tipo_implante, ei.Nombre AS es_implantable,
        s.DescripcionDetallada AS desc_detallada, s.QueEs AS que_es, s.ParaQue AS para_que,
        s.Caracteristicas AS caracteristicas, s.Usos AS usos, qp.Nombre AS queda_paciente, s.Materiales AS materiales,
@@ -167,15 +170,6 @@ async function familiaId(name, lineaIdVal) {
   return r.rows[0].id;
 }
 async function modeloId(name) { return catId('cat.Modelo', name); }
-// La marca vive bajo un modelo, igual que la línea bajo el departamento.
-async function marcaId(name, modeloIdVal) {
-  if (!name) return null;
-  if (!modeloIdVal) throw new Error(`Para la marca "${name}" primero hay que indicar el Modelo`);
-  const r = await query(
-    `SELECT Id FROM cat.Marca WHERE Nombre=$1 AND ModeloId=$2 LIMIT 1`, [name, modeloIdVal]);
-  if (!r.rows.length) throw new Error(`Marca no encontrada: "${name}"`);
-  return r.rows[0].id;
-}
 
 /* Convierte el cuerpo del formulario en {columna: valor} listo para INSERT/UPDATE */
 async function resolveRecord(body) {
@@ -183,8 +177,6 @@ async function resolveRecord(body) {
   const dId = await depId(body.departamento);
   const lId = await lineaId(body.linea, dId);
   const fId = await familiaId(body.familia, lId);
-  const moId = await modeloId(body.modelo);
-  const maId = await marcaId(body.marca, moId);
   for (const f of FIELD_MAP) {
     const v = body[f.key];
     if (f.type === 'text')        out[f.col] = v ? String(v) : null;
@@ -194,7 +186,7 @@ async function resolveRecord(body) {
     else if (f.type === 'dep')    out[f.col] = dId;
     else if (f.type === 'linea')  out[f.col] = lId;
     else if (f.type === 'familia')out[f.col] = fId;
-    else if (f.type === 'marca')  out[f.col] = maId;
+    else if (f.type === 'null')   out[f.col] = null;
   }
   return out;
 }
