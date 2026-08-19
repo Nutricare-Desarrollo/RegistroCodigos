@@ -172,6 +172,17 @@ porque lo que se está corrigiendo viene de un Excel). Sobre el grid hay **Marca
 **Desmarcar todo** y **Procesar códigos marcados**, este último habilitado solo si hay al
 menos un código marcado.
 
+Ese grid también tiene **fila de filtros**: texto ("contiene") en las seis columnas de datos y
+una lista en Estado con **Todos / Pendiente / Con error / Procesado**. Los filtros y el marcado
+trabajan juntos, que es lo que hace manejable un Excel largo: filtrar **Con error**, **Marcar
+todo** y procesar solo esos.
+
+- **Marcar todo** y la casilla del encabezado actúan sobre **lo que se está viendo** (los
+  pendientes que pasan el filtro) y **conservan** las marcas anteriores; si quedan marcas fuera
+  del filtro, el contador lo dice: *"5 códigos marcados (3 fuera del filtro)"*.
+- **Desmarcar todo** sí quita todas las marcas, filtradas o no.
+- El pie muestra **"N códigos de M"** con **Quitar filtros**, y cada carga se abre sin filtros.
+
 **Procesar** crea cada código en `dbo.Solicitud` con **Estado = Procesado**. Cada código se
 procesa por separado: si un valor no existe en los catálogos o falta un obligatorio, ese
 código **queda pendiente con el motivo visible** en el grid y los demás sí se registran.

@@ -154,7 +154,8 @@ button.tag:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .view-tab:hover{border-color:var(--brand)}
 .view-tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
 thead tr.filter-row th{background:#0d5478;padding:6px 10px;position:static;top:auto}
-thead tr.filter-row input{padding:6px 8px;font-size:12px;border-radius:5px;border:1px solid #2a6f95}
+thead tr.filter-row input,thead tr.filter-row select{padding:6px 8px;font-size:12px;border-radius:5px;border:1px solid #2a6f95}
+thead tr.filter-row select{width:100%;background:#fff;color:var(--txt)}
 .role-box{margin-top:12px}
 .role-box .rlbl{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700}
 .role-badge{display:inline-block;margin-top:4px;background:#e3f2fb;color:var(--brand-d);padding:4px 11px;border-radius:7px;font-weight:700;font-size:12.5px}
@@ -423,11 +424,9 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
           <span class="sel-info" id="cargaSelInfo"></span>
         </div>
         <div class="card">
+          <!-- El encabezado (con su fila de filtros) lo arma renderCargaDetHead. -->
           <div class="tbl-wrap"><table id="cargaDetTable">
-            <thead><tr><th class="chk"><input type="checkbox" id="cargaChkAll" title="Marcar / desmarcar todo" onchange="cargaToggleAll(this.checked)"></th>
-              <th>Código de Producto</th><th>Nombre del Producto</th><th>Departamento</th>
-              <th>Familia</th><th>Grupo Artículo</th><th>Centro de Costo</th>
-              <th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+            <thead id="cargaDetHead"></thead>
             <tbody id="cargaDetBody"></tbody></table></div>
           <div id="cargaDetEmpty" class="empty hidden"><div class="big">📄</div><div>Esta carga no tiene códigos.</div></div>
           <div class="grid-foot" id="cargaDetFoot"></div>
@@ -1931,6 +1930,7 @@ async function openCarga(id){
     CARGA=r.carga; CARGA_COD=r.codigos||[];
   }catch(e){ toast('Error al abrir la carga: '+e.message); return; }
   CARGA_SEL=new Set();
+  CARGA_DET_FILTERS={}; CARGA_DET_ESTADO='';   // cada carga se abre sin filtros
   setNav('nav-codigos'); showOnly('viewCargaDet');
   renderCargaDet();
 }
@@ -1942,6 +1942,47 @@ async function openCargaKeepSel(id){
   CARGA_SEL=new Set(CARGA_COD.filter(r=>r.estado==='Pendiente'&&sel.has(r.id)).map(r=>r.id));
   renderCargaDet();
 }
+/* ---------- Filtros del grid de códigos de la carga ---------- */
+/* Los valores del código viven en r.datos (vienen del Excel), así que el filtro
+   busca ahí; Estado es una lista, porque lo útil es aislar los que tienen error. */
+let CARGA_DET_FILTERS={}, CARGA_DET_ESTADO='';
+function cargaDetFiltradas(){
+  return CARGA_COD.filter(r=>{
+    const d=r.datos||{};
+    if(CARGA_DET_ESTADO==='Pendiente' && r.estado!=='Pendiente') return false;
+    if(CARGA_DET_ESTADO==='Procesado' && r.estado!=='Procesado') return false;
+    if(CARGA_DET_ESTADO==='ConError'  && !(r.estado==='Pendiente' && r.error)) return false;
+    return CARGA_COLS.every(k=>{
+      const f=(CARGA_DET_FILTERS[k]||'').trim().toLowerCase(); if(!f) return true;
+      return String(d[k]==null?'':d[k]).toLowerCase().includes(f);
+    });
+  });
+}
+function onCargaDetFilter(k,v){ CARGA_DET_FILTERS[k]=v; renderCargaDetBody(); }
+function onCargaDetEstado(v){ CARGA_DET_ESTADO=v; renderCargaDetBody(); }
+function cargaDetFiltrando(){
+  return !!CARGA_DET_ESTADO || CARGA_COLS.some(k=>(CARGA_DET_FILTERS[k]||'').trim());
+}
+function limpiarFiltrosCargaDet(){ CARGA_DET_FILTERS={}; CARGA_DET_ESTADO=''; renderCargaDet(); }
+// Pendientes que además pasan el filtro: son los que alcanzan "Marcar todo".
+function cargaPendFiltradas(){ return cargaDetFiltradas().filter(r=>r.estado==='Pendiente'); }
+const CARGA_DET_LABELS={codigo:'Código de Producto', nombre:'Nombre del Producto',
+  departamento:'Departamento', familia:'Familia', grupo_articulo:'Grupo Artículo',
+  centro_costo:'Centro de Costo'};
+function renderCargaDetHead(){
+  const head='<th class="chk"><input type="checkbox" id="cargaChkAll" title="Marcar / desmarcar los códigos de la lista" onchange="cargaToggleAll(this.checked)"></th>'
+    + CARGA_COLS.map(k=>`<th>${CARGA_DET_LABELS[k]||k}</th>`).join('')
+    + '<th>Estado</th><th style="text-align:right">Acciones</th>';
+  const filtros='<th class="chk"></th>'
+    + CARGA_COLS.map(k=>`<th><input type="text" placeholder="Filtrar…" oninput="onCargaDetFilter('${k}',this.value)" value="${attr(CARGA_DET_FILTERS[k])}"></th>`).join('')
+    + `<th><select onchange="onCargaDetEstado(this.value)">
+         <option value=""${CARGA_DET_ESTADO===''?' selected':''}>Todos</option>
+         <option value="Pendiente"${CARGA_DET_ESTADO==='Pendiente'?' selected':''}>Pendiente</option>
+         <option value="ConError"${CARGA_DET_ESTADO==='ConError'?' selected':''}>Con error</option>
+         <option value="Procesado"${CARGA_DET_ESTADO==='Procesado'?' selected':''}>Procesado</option>
+       </select></th><th></th>`;
+  document.getElementById('cargaDetHead').innerHTML=`<tr>${head}</tr><tr class="filter-row">${filtros}</tr>`;
+}
 function renderCargaDet(){
   document.getElementById('cargaDetTitle').textContent='Carga · '+(CARGA?CARGA.archivo:'');
   document.getElementById('cargaDetMeta').innerHTML = CARGA
@@ -1950,15 +1991,24 @@ function renderCargaDet(){
        <span>Códigos: <b>${CARGA.total}</b></span>
        <span>Pendientes: <b>${CARGA.pendientes}</b></span>
        <span>Registrados: <b>${CARGA.procesados}</b></span>` : '';
+  renderCargaDetHead();
+  renderCargaDetBody();
+}
+function renderCargaDetBody(){
   const b=document.getElementById('cargaDetBody'); b.innerHTML='';
   const vacio=CARGA_COD.length===0;
+  const rows=cargaDetFiltradas();
   document.getElementById('cargaDetTable').classList.toggle('hidden', vacio);
   document.getElementById('cargaDetEmpty').classList.toggle('hidden', !vacio);
   const foot=document.getElementById('cargaDetFoot');
-  foot.textContent = CARGA_COD.length===1 ? '1 código' : (CARGA_COD.length+' códigos');
+  foot.innerHTML = (rows.length===1 ? '1 código' : (rows.length+' códigos'))
+    + (cargaDetFiltrando() ? ` de ${CARGA_COD.length} · <a href="javascript:void(0)" onclick="limpiarFiltrosCargaDet()">Quitar filtros</a>` : '');
   foot.classList.toggle('hidden', vacio);
-  if(!vacio){
-    CARGA_COD.forEach(r=>{
+  if(!vacio && rows.length===0){
+    b.innerHTML=`<tr><td colspan="${CARGA_COLS.length+3}" style="text-align:center;color:var(--muted);padding:28px">No se encontraron códigos con los filtros aplicados.</td></tr>`;
+  }
+  if(!vacio && rows.length){
+    rows.forEach(r=>{
       const d=r.datos||{}; const ro=r.estado==='Procesado';
       const chk = ro
         ? '<input type="checkbox" disabled title="Ya registrado">'
@@ -1981,18 +2031,36 @@ function renderCargaDet(){
 }
 function cargaPendientes(){ return CARGA_COD.filter(r=>r.estado==='Pendiente'); }
 function cargaToggle(id,on){ if(on) CARGA_SEL.add(id); else CARGA_SEL.delete(id); cargaUpdateSel(); }
-function cargaToggleAll(on){ on?cargaMarcarTodo():cargaDesmarcarTodo(); }
-function cargaMarcarTodo(){ CARGA_SEL=new Set(cargaPendientes().map(r=>r.id)); renderCargaDet(); }
-function cargaDesmarcarTodo(){ CARGA_SEL=new Set(); renderCargaDet(); }
+/* La casilla del encabezado actúa sobre la lista visible; el botón "Desmarcar
+   todo" de la barra sí quita todas las marcas, estén filtradas o no. */
+function cargaToggleAll(on){
+  if(on) cargaMarcarTodo();
+  else { cargaPendFiltradas().forEach(r=>CARGA_SEL.delete(r.id)); renderCargaDetBody(); }
+}
+/* "Marcar todo" trabaja sobre lo que se está viendo: con un filtro puesto marca
+   solo esos pendientes (así se puede filtrar "Con error", marcar y procesar).
+   Las marcas anteriores se conservan; el contador dice cuántas hay en total. */
+function cargaMarcarTodo(){ cargaPendFiltradas().forEach(r=>CARGA_SEL.add(r.id)); renderCargaDetBody(); }
+function cargaDesmarcarTodo(){ CARGA_SEL=new Set(); renderCargaDetBody(); }
 function cargaUpdateSel(){
   const n=CARGA_SEL.size, pend=cargaPendientes().length;
+  const pendVis=cargaPendFiltradas();
   // "Procesar marcados" solo se habilita si hay al menos un código marcado.
   document.getElementById('cargaProcBtn').disabled = n===0;
-  document.getElementById('cargaSelInfo').textContent =
-    n===0 ? (pend? 'Ningún código marcado' : 'Todos los códigos ya fueron registrados')
-          : (n===1? '1 código marcado' : n+' códigos marcados');
+  const filtrando=cargaDetFiltrando();
+  let info = n===0 ? (pend? 'Ningún código marcado' : 'Todos los códigos ya fueron registrados')
+                   : (n===1? '1 código marcado' : n+' códigos marcados');
+  // Con filtro puesto se aclara que puede haber marcas fuera de la vista.
+  if(n>0 && filtrando){
+    const visibles=pendVis.filter(r=>CARGA_SEL.has(r.id)).length;
+    if(visibles!==n) info += ` (${n-visibles} fuera del filtro)`;
+  }
+  document.getElementById('cargaSelInfo').textContent=info;
   const all=document.getElementById('cargaChkAll');
-  if(all){ all.checked = pend>0 && n===pend; all.disabled = pend===0; }
+  if(all){
+    all.checked = pendVis.length>0 && pendVis.every(r=>CARGA_SEL.has(r.id));
+    all.disabled = pendVis.length===0;
+  }
 }
 function askQuitarCod(detId){
   const r=CARGA_COD.find(x=>x.id===detId);
