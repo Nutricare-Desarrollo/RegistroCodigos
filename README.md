@@ -44,6 +44,13 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | GET    | /api/adjuntos/{modulo}/{id}/{adjuntoId}/contenido | Devuelve un archivo (`?download=1` fuerza descarga) |
 | POST   | /api/adjuntos/{modulo}/{id}  | Agregar un archivo al registro (base64) |
 | DELETE | /api/adjuntos/{modulo}/{id}/{adjuntoId} | Quitar un archivo (solo Compras/Administrador) |
+| GET    | /api/cargas                  | Cargas de Excel (`?estado=Pendiente|Registrada`), más reciente primero |
+| POST   | /api/cargas                  | Crear una carga con sus códigos pendientes |
+| GET    | /api/cargas/{id}             | Cabecera + códigos de una carga      |
+| DELETE | /api/cargas/{id}             | Eliminar la carga y sus pendientes   |
+| PUT    | /api/cargas/{id}/codigos/{detId} | Corregir un código pendiente     |
+| DELETE | /api/cargas/{id}/codigos/{detId} | Quitar un código de la carga     |
+| POST   | /api/cargas/{id}/procesar    | Registrar los códigos marcados (`{ids:[…]}`) |
 
 ## Puesta en marcha
 
@@ -64,6 +71,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V4_Adjuntos.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V5_Conversiones.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V6_Modelo_Marca_Adjuntos_Multiples.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V7_Cargas.sql
    ```
 3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
@@ -130,6 +138,36 @@ no se elige de una lista y no depende del Modelo. Se guarda en la columna de tex
 - La migración `V6` había convertido los valores de texto en registros de catálogo. Las
   columnas de texto `Solicitud.Modelo` y `Solicitud.Marca` **no se eliminaron**, que es lo
   que permite volver a texto sin tocar la base.
+
+## Cargas de Excel (bandeja de códigos)
+
+En **Creación de Códigos**, el Excel ya **no crea los registros de inmediato**: queda como una
+**carga** en la pantalla **Cargas de Excel** (visible para **Compras** y **Administrador**), con
+sus códigos en estado *Pendiente*. Órdenes de Pedido mantiene la carga directa de siempre.
+
+El grid de cargas muestra **Fecha, Hora, Usuario, Archivo, cantidad de códigos y Estado**,
+ordenado del más reciente al más antiguo, con dos pestañas:
+
+- **Pendientes de registrar** — cargas a las que les queda al menos un código sin registrar.
+- **Histórico registrado** — cargas cuyos códigos ya se registraron todos. Una carga pasa
+  sola de una pestaña a la otra: el estado se **deriva** de sus códigos (vista `dbo.vCarga`),
+  no se guarda, así que no puede quedar desincronizado.
+
+Al entrar a una carga se listan sus códigos con **Código de Producto, Nombre, Departamento,
+Familia, Grupo Artículo y Centro de Costo**; el botón **✏️** abre un modal con el resto de la
+información (los campos de lista sugieren los valores del catálogo pero aceptan texto libre,
+porque lo que se está corrigiendo viene de un Excel). Sobre el grid hay **Marcar todo**,
+**Desmarcar todo** y **Procesar códigos marcados**, este último habilitado solo si hay al
+menos un código marcado.
+
+**Procesar** crea cada código en `dbo.Solicitud` con **Estado = Procesado**. Cada código se
+procesa por separado: si un valor no existe en los catálogos o falta un obligatorio, ese
+código **queda pendiente con el motivo visible** en el grid y los demás sí se registran.
+Los obligatorios que se exigen al procesar son los mismos del formulario (constante
+`CARGA_REQUIRED` en `api/src/index.js`).
+
+Eliminar una carga borra sus códigos **pendientes**; los que ya se registraron en Códigos
+**no se tocan**.
 
 ## Centro de Costo
 

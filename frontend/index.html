@@ -199,6 +199,14 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .leg.clickable{cursor:pointer;border-radius:7px;padding:5px 7px;margin:-5px -7px 5px}
 .leg.clickable:hover{background:#eef6fb}
 .donut-seg{cursor:pointer;transition:opacity .15s} .donut-seg:hover{opacity:.8}
+/* Bandeja de cargas de Excel */
+.carga-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.carga-toolbar .sel-info{margin-left:auto;color:var(--muted);font-size:13px;font-weight:600}
+th.chk,td.chk{width:42px;text-align:center}
+td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
+.err-txt{color:var(--danger);font-size:12px;white-space:normal;display:block;line-height:1.35}
+.carga-meta{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:4px}
+.carga-meta b{color:var(--txt)}
 
 </style>
 </head>
@@ -231,6 +239,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
         <div class="nav-item active" id="nav-inicio" onclick="showDashboard()"><span class="ic">🏠</span> Inicio</div>
         <div class="nav-item" id="nav-codigos" onclick="switchModule('codigos')"><span class="ic">🏷️</span> Creación de Códigos</div>
         <div class="nav-item" id="nav-ordenes" onclick="switchModule('ordenes')"><span class="ic">📦</span> Solicitud de Orden de Pedido</div>
+        <div class="nav-item hidden" id="nav-cargas" onclick="showCargas()"><span class="ic">📥</span> Cargas de Excel</div>
         <div class="nav-label">Configuración</div>
         <div class="nav-item hidden" id="nav-conversiones" onclick="showConversiones()"><span class="ic">🔁</span> Conversiones</div>
         <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
@@ -348,7 +357,73 @@ button:disabled{opacity:.5;cursor:not-allowed}
           <tbody id="usuariosBody"></tbody></table>
         </div></div>
       </section>
+      <!-- CARGAS DE EXCEL: bandeja (solo Compras / Administrador) -->
+      <section id="viewCargas" class="hidden">
+        <div class="page-head">
+          <div><h2>Cargas de Excel</h2><div class="sub">Archivos subidos y pendientes de registrar en Creación de Códigos</div></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-ghost" onclick="loadCargas()">🔄 Actualizar</button>
+            <button class="btn-primary" onclick="openImportCargas()">⬆ Subir Excel</button>
+          </div>
+        </div>
+        <div class="view-tabs">
+          <button class="view-tab active" id="tabCargaPend" onclick="setCargaView('Pendiente')">Pendientes de registrar</button>
+          <button class="view-tab" id="tabCargaHist" onclick="setCargaView('Registrada')">Histórico registrado</button>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table id="cargasTable">
+            <thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Archivo</th>
+              <th>Códigos</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+            <tbody id="cargasBody"></tbody></table></div>
+          <div id="cargasEmpty" class="empty hidden"><div class="big">📥</div><div id="cargasEmptyTxt">No hay cargas pendientes de registrar.</div></div>
+          <div class="grid-foot" id="cargasFoot"></div>
+        </div>
+      </section>
+
+      <!-- CARGAS DE EXCEL: detalle de una carga -->
+      <section id="viewCargaDet" class="hidden">
+        <div class="page-head">
+          <div>
+            <h2 id="cargaDetTitle">Carga</h2>
+            <div class="sub">Marque los códigos que desea registrar. Los que no se registren quedan pendientes en esta carga.</div>
+            <div class="carga-meta" id="cargaDetMeta"></div>
+          </div>
+          <button class="btn-ghost" onclick="showCargas()">← Volver a las cargas</button>
+        </div>
+        <div class="carga-toolbar">
+          <button class="btn-ghost" onclick="cargaMarcarTodo()">☑ Marcar todo</button>
+          <button class="btn-ghost" onclick="cargaDesmarcarTodo()">☐ Desmarcar todo</button>
+          <button class="btn-primary" id="cargaProcBtn" onclick="cargaProcesarMarcados()" disabled>✓ Procesar códigos marcados</button>
+          <span class="sel-info" id="cargaSelInfo"></span>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table id="cargaDetTable">
+            <thead><tr><th class="chk"><input type="checkbox" id="cargaChkAll" title="Marcar / desmarcar todo" onchange="cargaToggleAll(this.checked)"></th>
+              <th>Código de Producto</th><th>Nombre del Producto</th><th>Departamento</th>
+              <th>Familia</th><th>Grupo Artículo</th><th>Centro de Costo</th>
+              <th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+            <tbody id="cargaDetBody"></tbody></table></div>
+          <div id="cargaDetEmpty" class="empty hidden"><div class="big">📄</div><div>Esta carga no tiene códigos.</div></div>
+          <div class="grid-foot" id="cargaDetFoot"></div>
+        </div>
+      </section>
     </main>
+  </div>
+</div>
+
+<!-- ===== MODAL: editar un código de la carga ===== -->
+<div id="cargaCodModal" class="overlay hidden">
+  <div class="modal wide">
+    <div class="modal-head"><h3 id="cargaCodTitle">Código de la carga</h3><button class="x" onclick="cargaCodClose()">×</button></div>
+    <div class="modal-body">
+      <p style="margin-top:0;color:var(--muted);font-size:12.5px">Los campos de lista muestran sugerencias del catálogo, pero acepta cualquier texto: el valor se valida al procesar el código.</p>
+      <div class="form-grid" id="cargaCodFields"></div>
+      <p id="cargaCodError" style="color:var(--danger);font-size:13px;margin:8px 0 0;min-height:16px"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-no" onclick="cargaCodClose()">Cancelar</button>
+      <button class="btn-primary" id="cargaCodSaveBtn" onclick="cargaCodGuardar()">Guardar</button>
+    </div>
   </div>
 </div>
 
@@ -389,6 +464,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
       <div id="importIntro">
         <p style="margin-top:0">El archivo debe tener los <b>mismos encabezados de columna</b> que la descarga a Excel (primera fila). Las columnas que no coincidan se ignoran.</p>
         <p>Los valores de las listas (Departamento, Proveedor, etc.) <b>deben existir en los catálogos</b>; si no, esa fila se marcará con error y podrás corregirla. Descarga la plantilla para partir del formato correcto.</p>
+        <p>En <b>Creación de Códigos</b> el archivo no crea los registros de inmediato: queda en <b>Cargas de Excel</b> como pendiente, donde se revisan los códigos y se registran los que se marquen.</p>
       </div>
       <div id="importProgress" class="hidden" style="text-align:center;padding:16px">
         <div style="font-size:32px">⏳</div><p id="importProgTxt" style="color:var(--muted)"></p>
@@ -530,7 +606,8 @@ const MOD_LABELS = {codigos:"Creación de Códigos", ordenes:"Orden de Pedido"};
 
 let ACT="codigos";
 function M(){ return MODULES[ACT]; }
-function allFields(){ return M().sections.flatMap(s=>s.fields); }
+function allFieldsOf(m){ return m.sections.flatMap(s=>s.fields); }
+function allFields(){ return allFieldsOf(M()); }
 let editingId=null;
 
 /* ---- Estado de roles, vista y filtros ---- */
@@ -542,6 +619,8 @@ function canDelete(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 function canEditEstado(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 // Solo Compras/Administrador pueden agregar/editar/eliminar opciones de las listas desplegables.
 function canManageCat(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
+// Bandeja de cargas de Excel: mismo criterio que Catálogos.
+function canCargas(){ return EFF_ROLE==='Compras'||EFF_ROLE==='Administrador'; }
 function isAdmin(){ return EFF_ROLE==='Administrador'; }
 // El rol General no puede modificar un registro ya Procesado (solo verlo).
 function recordReadOnly(r){ return EFF_ROLE==='General' && (r&&(r.estado||'Pendiente'))==='Procesado'; }
@@ -602,10 +681,14 @@ function onRoleSim(){
   if(!isAdmin() && !document.getElementById('viewUsuarios').classList.contains('hidden')) showGrid();
   if(!canManageCat() && !document.getElementById('viewCatalogos').classList.contains('hidden')) showGrid();
   if(!canManageCat() && !document.getElementById('viewConversiones').classList.contains('hidden')) showGrid();
+  if(!canCargas() && (!document.getElementById('viewCargas').classList.contains('hidden')
+                   || !document.getElementById('viewCargaDet').classList.contains('hidden'))) showGrid();
   renderMain();
 }
 function applyRoleVisibility(){
   document.getElementById('nav-usuarios').classList.toggle('hidden', !isAdmin());
+  // Cargas de Excel: visible solo para Compras y Administrador.
+  document.getElementById('nav-cargas').classList.toggle('hidden', !canCargas());
   // Catálogos: visible solo para Compras y Administrador.
   document.getElementById('nav-catalogos').classList.toggle('hidden', !canManageCat());
   // Conversiones: visible solo para Compras y Administrador.
@@ -627,7 +710,7 @@ async function loadCatalogsFor(id){
 async function loadRecords(){ M().records = await api('GET', M().api.rec); }
 
 /* ====================== NAVEGACIÓN ====================== */
-const VIEWS=['viewDashboard','viewGrid','viewForm','viewConversiones','viewCatalogos','viewUsuarios'];
+const VIEWS=['viewDashboard','viewGrid','viewForm','viewConversiones','viewCatalogos','viewUsuarios','viewCargas','viewCargaDet'];
 function showOnly(id){ VIEWS.forEach(v=>document.getElementById(v).classList.toggle('hidden', v!==id)); }
 function setNav(id){ document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); const n=document.getElementById(id); if(n) n.classList.add('active'); }
 async function switchModule(id){
@@ -1546,6 +1629,7 @@ async function runImport(rows){
 }
 async function onImportFile(input){
   const file=input.files&&input.files[0]; if(!file) return;
+  const fileName=file.name;
   if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); input.value=""; return; }
   let rows;
   try{
@@ -1559,6 +1643,9 @@ async function onImportFile(input){
   const headerMap=importHeaderMap();
   const anyMatch=Object.keys(rows[0]).some(h=>headerMap[String(h).trim().toLowerCase()]);
   if(!anyMatch){ toast("Ninguna columna coincide con el formulario. Usa la plantilla."); return; }
+  // Códigos: el Excel NO crea los registros de una. Entra a la bandeja de cargas
+  // como pendiente y de ahí se revisa y se registra. Órdenes mantiene la carga directa.
+  if(ACT==='codigos'){ await runImportCarga(fileName, rows); return; }
   // Ejecutar la carga
   document.getElementById('importIntro').classList.add('hidden');
   document.getElementById('importTemplBtn').classList.add('hidden');
@@ -1587,6 +1674,287 @@ function showImportResults(res){
   box.innerHTML=html; box.classList.remove('hidden');
   document.getElementById('importCloseBtn').classList.remove('hidden');
   toast(`Carga finalizada: ${res.ok} creado(s)${nErr?`, ${nErr} con error`:''}`);
+}
+
+/* ====================== CARGAS DE EXCEL (bandeja) — solo Compras / Administrador ======================
+   Flujo: el Excel crea una CARGA con sus códigos en Pendiente -> se revisan y
+   corrigen aquí -> los marcados se registran en Creación de Códigos con estado
+   Procesado. La carga desaparece de "Pendientes" cuando ya no le queda ningún
+   código sin registrar, y pasa al histórico. */
+let CARGAS=[], CARGA_VIEW='Pendiente', CARGA=null, CARGA_COD=[], CARGA_SEL=new Set(), cargaCodId=null;
+// Columnas visibles del detalle (el resto de la información se ve en el modal).
+const CARGA_COLS=['codigo','nombre','departamento','familia','grupo_articulo','centro_costo'];
+
+function codModule(){ return MODULES.codigos; }
+// El usuario puede entrar a Cargas sin haber pasado por Códigos: los catálogos
+// se necesitan para las sugerencias del modal.
+async function ensureCodCatalogs(){
+  const l=MODULES.codigos.lists;
+  if(!l || !l.departamentos) { try{ await loadCatalogsFor('codigos'); }catch(e){} }
+}
+
+async function showCargas(){
+  if(!canCargas()){ toast('Su rol no tiene acceso a las cargas'); showGrid(); return; }
+  setNav('nav-cargas'); showOnly('viewCargas');
+  await loadCargas();
+}
+function setCargaView(v){
+  CARGA_VIEW=v;
+  document.getElementById('tabCargaPend').classList.toggle('active', v==='Pendiente');
+  document.getElementById('tabCargaHist').classList.toggle('active', v==='Registrada');
+  loadCargas();
+}
+async function loadCargas(){
+  const b=document.getElementById('cargasBody');
+  b.innerHTML='<tr><td colspan="7" style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
+  try{ CARGAS=await api('GET','/cargas?estado='+encodeURIComponent(CARGA_VIEW)); }
+  catch(e){ CARGAS=[]; toast('Error al cargar las cargas: '+e.message); }
+  renderCargas();
+}
+function cargaBadge(est){
+  return `<span class="badge ${est==='Registrada'?'badge-proc':'badge-pend'}">${esc(est)}</span>`;
+}
+function renderCargas(){
+  const b=document.getElementById('cargasBody'); b.innerHTML='';
+  const vacio=CARGAS.length===0;
+  document.getElementById('cargasTable').classList.toggle('hidden', vacio);
+  document.getElementById('cargasEmpty').classList.toggle('hidden', !vacio);
+  document.getElementById('cargasEmptyTxt').textContent = CARGA_VIEW==='Pendiente'
+    ? 'No hay cargas pendientes de registrar.'
+    : 'Todavía no hay cargas registradas por completo.';
+  const foot=document.getElementById('cargasFoot');
+  foot.textContent = CARGAS.length===1 ? '1 carga' : (CARGAS.length+' cargas');
+  foot.classList.toggle('hidden', vacio);
+  if(vacio) return;
+  CARGAS.forEach(c=>{
+    const pend = c.estado==='Pendiente'
+      ? `<span style="color:var(--muted)"> · ${c.pendientes} pendiente(s)</span>` : '';
+    const err = c.con_error ? `<span class="err-txt">${c.con_error} con error</span>` : '';
+    const verBtn = c.estado==='Registrada'
+      ? `<button class="icon-btn edit-btn" title="Ver los códigos de la carga" onclick="openCarga(${c.id})">👁️</button>`
+      : `<button class="icon-btn edit-btn" title="Editar y registrar los códigos" onclick="openCarga(${c.id})">✏️</button>`;
+    const delBtn = `<button class="icon-btn del-btn" title="Eliminar la carga" onclick="askEliminarCarga(${c.id})">🗑️</button>`;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${esc(c.fecha)}</td><td>${esc(c.hora)}</td><td>${esc(c.usuario)}</td>
+      <td>${esc(c.archivo)}</td><td><b>${c.total}</b>${pend}${err}</td>
+      <td>${cargaBadge(c.estado)}</td>
+      <td><div class="actions-cell" style="justify-content:flex-end">${verBtn}${delBtn}</div></td>`;
+    b.appendChild(tr);
+  });
+}
+function askEliminarCarga(id){
+  const c=CARGAS.find(x=>x.id===id);
+  const extra = c && c.procesados ? ` Los ${c.procesados} código(s) ya registrado(s) NO se eliminan.` : '';
+  askConfirmCB('¿Eliminar esta carga y sus códigos pendientes?'+extra,
+    c? (c.archivo+' — '+c.total+' código(s)') : '',
+    async ()=>{ await api('DELETE','/cargas/'+id); toast('Carga eliminada'); await loadCargas(); });
+}
+function openImportCargas(){ ACT='codigos'; openImport(); }
+
+/* ---------- Detalle de una carga ---------- */
+async function openCarga(id){
+  await ensureCodCatalogs();
+  try{
+    const r=await api('GET','/cargas/'+id);
+    CARGA=r.carga; CARGA_COD=r.codigos||[];
+  }catch(e){ toast('Error al abrir la carga: '+e.message); return; }
+  CARGA_SEL=new Set();
+  setNav('nav-cargas'); showOnly('viewCargaDet');
+  renderCargaDet();
+}
+async function openCargaKeepSel(id){
+  const sel=new Set(CARGA_SEL);
+  try{ const r=await api('GET','/cargas/'+id); CARGA=r.carga; CARGA_COD=r.codigos||[]; }
+  catch(e){ toast('Error al recargar: '+e.message); return; }
+  // Solo sobreviven las marcas de códigos que siguen pendientes.
+  CARGA_SEL=new Set(CARGA_COD.filter(r=>r.estado==='Pendiente'&&sel.has(r.id)).map(r=>r.id));
+  renderCargaDet();
+}
+function renderCargaDet(){
+  document.getElementById('cargaDetTitle').textContent='Carga · '+(CARGA?CARGA.archivo:'');
+  document.getElementById('cargaDetMeta').innerHTML = CARGA
+    ? `<span>Subida: <b>${esc(CARGA.fecha)} ${esc(CARGA.hora)}</b></span>
+       <span>Usuario: <b>${esc(CARGA.usuario)}</b></span>
+       <span>Códigos: <b>${CARGA.total}</b></span>
+       <span>Pendientes: <b>${CARGA.pendientes}</b></span>
+       <span>Registrados: <b>${CARGA.procesados}</b></span>` : '';
+  const b=document.getElementById('cargaDetBody'); b.innerHTML='';
+  const vacio=CARGA_COD.length===0;
+  document.getElementById('cargaDetTable').classList.toggle('hidden', vacio);
+  document.getElementById('cargaDetEmpty').classList.toggle('hidden', !vacio);
+  const foot=document.getElementById('cargaDetFoot');
+  foot.textContent = CARGA_COD.length===1 ? '1 código' : (CARGA_COD.length+' códigos');
+  foot.classList.toggle('hidden', vacio);
+  if(!vacio){
+    CARGA_COD.forEach(r=>{
+      const d=r.datos||{}; const ro=r.estado==='Procesado';
+      const chk = ro
+        ? '<input type="checkbox" disabled title="Ya registrado">'
+        : `<input type="checkbox" ${CARGA_SEL.has(r.id)?'checked':''} onchange="cargaToggle(${r.id},this.checked)">`;
+      const cells=CARGA_COLS.map(k=>`<td>${esc(d[k])}</td>`).join('');
+      const estado = ro
+        ? `<span class="badge badge-proc">Procesado</span>`
+        : `<span class="badge badge-pend">Pendiente</span>${r.error?`<span class="err-txt">${esc(r.error)}</span>`:''}`;
+      const btn = ro
+        ? `<button class="icon-btn edit-btn" title="Ver la información del código" onclick="cargaCodEditar(${r.id})">👁️</button>`
+        : `<button class="icon-btn edit-btn" title="Editar la información del código" onclick="cargaCodEditar(${r.id})">✏️</button>`
+          +`<button class="icon-btn del-btn" title="Quitar el código de la carga" onclick="askQuitarCod(${r.id})">🗑️</button>`;
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="chk">${chk}</td>${cells}<td>${estado}</td>
+        <td><div class="actions-cell" style="justify-content:flex-end">${btn}</div></td>`;
+      b.appendChild(tr);
+    });
+  }
+  cargaUpdateSel();
+}
+function cargaPendientes(){ return CARGA_COD.filter(r=>r.estado==='Pendiente'); }
+function cargaToggle(id,on){ if(on) CARGA_SEL.add(id); else CARGA_SEL.delete(id); cargaUpdateSel(); }
+function cargaToggleAll(on){ on?cargaMarcarTodo():cargaDesmarcarTodo(); }
+function cargaMarcarTodo(){ CARGA_SEL=new Set(cargaPendientes().map(r=>r.id)); renderCargaDet(); }
+function cargaDesmarcarTodo(){ CARGA_SEL=new Set(); renderCargaDet(); }
+function cargaUpdateSel(){
+  const n=CARGA_SEL.size, pend=cargaPendientes().length;
+  // "Procesar marcados" solo se habilita si hay al menos un código marcado.
+  document.getElementById('cargaProcBtn').disabled = n===0;
+  document.getElementById('cargaSelInfo').textContent =
+    n===0 ? (pend? 'Ningún código marcado' : 'Todos los códigos ya fueron registrados')
+          : (n===1? '1 código marcado' : n+' códigos marcados');
+  const all=document.getElementById('cargaChkAll');
+  if(all){ all.checked = pend>0 && n===pend; all.disabled = pend===0; }
+}
+function askQuitarCod(detId){
+  const r=CARGA_COD.find(x=>x.id===detId);
+  askConfirmCB('¿Quitar este código de la carga? No se registra y se pierde su información.',
+    r? ((r.datos.codigo||'(sin código)')+' — '+(r.datos.nombre||'')) : '',
+    async ()=>{ await api('DELETE','/cargas/'+CARGA.id+'/codigos/'+detId); toast('Código quitado de la carga'); await openCargaKeepSel(CARGA.id); });
+}
+function cargaProcesarMarcados(){
+  const ids=[...CARGA_SEL];
+  if(!ids.length) return;
+  askConfirmCB(`¿Registrar ${ids.length} código(s) en Creación de Códigos con estado Procesado?`, '',
+    async ()=>{
+      let res;
+      try{ res=await api('POST','/cargas/'+CARGA.id+'/procesar',{ids}); }
+      catch(e){ toast('Error al procesar: '+e.message); return; }
+      const nErr=(res.errores||[]).length;
+      toast(`${res.procesados} código(s) registrado(s)`+(nErr?`, ${nErr} con error`:''));
+      if(res.carga && res.carga.pendientes===0){
+        // Ya no queda nada pendiente: la carga sale del listado de pendientes.
+        CARGA=null; CARGA_COD=[]; CARGA_SEL=new Set();
+        await showCargas();
+        return;
+      }
+      await openCargaKeepSel(CARGA.id);
+    });
+}
+
+/* ---------- Modal: el resto de la información del código ---------- */
+// Sugerencias del catálogo. En los campos jerárquicos (Línea, Familia, Grupo
+// Artículo) se ofrecen todas las opciones: la validación del padre-hijo la hace
+// la API al procesar, y aquí el usuario está corrigiendo texto que vino de Excel.
+function cargaSugerencias(f){
+  const m=codModule();
+  if(f.type==='list') return (m.lists&&m.lists[f.list])||[];
+  if(f.type==='dependent'){
+    const h=m.hier&&m.hier[f.key]; if(!h||!h.map) return [];
+    const out=new Set();
+    Object.keys(h.map).forEach(k=>(h.map[k]||[]).forEach(v=>out.add(v)));
+    return [...out].sort((a,b)=>a.localeCompare(b));
+  }
+  return [];
+}
+function cargaCodEditar(detId){
+  const row=CARGA_COD.find(r=>r.id===detId); if(!row) return;
+  cargaCodId=detId;
+  const d=row.datos||{}; const ro=row.estado==='Procesado';
+  document.getElementById('cargaCodTitle').textContent=
+    (ro?'Código registrado · ':'Editar código · ')+(d.codigo||'(sin código)');
+  document.getElementById('cargaCodError').textContent = row.error||'';
+  const c=document.getElementById('cargaCodFields'); c.innerHTML='';
+  codModule().sections.forEach(sec=>{
+    const st=document.createElement('div'); st.className='section-title'; st.textContent=sec.title; c.appendChild(st);
+    sec.fields.forEach(f=>{
+      const wrap=document.createElement('div'); wrap.className='field'+(f.full?' full':'');
+      const lbl=document.createElement('label');
+      lbl.innerHTML=f.label+(f.req?' <span class="req">*</span>':''); wrap.appendChild(lbl);
+      const val=d[f.key]==null?'':d[f.key];
+      let el;
+      if(f.type==='textarea'){ el=document.createElement('textarea'); el.rows=3; }
+      else{
+        el=document.createElement('input');
+        el.type = f.type==='number' ? 'number' : f.type==='date' ? 'date' : 'text';
+        if(f.max) el.maxLength=f.max;
+        const sug=cargaSugerencias(f);
+        if(sug.length){
+          const dlId='dlc_'+f.key;
+          const dl=document.createElement('datalist'); dl.id=dlId;
+          sug.forEach(v=>{ const o=document.createElement('option'); o.value=v; dl.appendChild(o); });
+          wrap.appendChild(dl); el.setAttribute('list', dlId);
+        }
+      }
+      el.id='cfld_'+f.key; el.value=val; el.disabled=ro;
+      wrap.appendChild(el); c.appendChild(wrap);
+    });
+  });
+  document.getElementById('cargaCodSaveBtn').classList.toggle('hidden', ro);
+  document.getElementById('cargaCodModal').classList.remove('hidden');
+}
+function cargaCodClose(){ cargaCodId=null; document.getElementById('cargaCodModal').classList.add('hidden'); }
+async function cargaCodGuardar(){
+  const row=CARGA_COD.find(r=>r.id===cargaCodId); if(!row) return;
+  const datos={};
+  allFieldsOf(codModule()).forEach(f=>{
+    const el=document.getElementById('cfld_'+f.key);
+    datos[f.key]=el? String(el.value||'').trim() : '';
+  });
+  const faltan=allFieldsOf(codModule()).filter(f=>f.req && !datos[f.key]).map(f=>f.label);
+  const errBox=document.getElementById('cargaCodError');
+  if(faltan.length){
+    errBox.textContent='Falta completar: '+faltan.join(', ')+'. Puede guardar así, pero el código no se podrá registrar.';
+  } else errBox.textContent='';
+  const btn=document.getElementById('cargaCodSaveBtn'); btn.disabled=true;
+  try{
+    await api('PUT','/cargas/'+CARGA.id+'/codigos/'+row.id,{datos});
+    toast('Código actualizado');
+    cargaCodClose();
+    await openCargaKeepSel(CARGA.id);
+  }catch(e){ errBox.textContent=e.message; }
+  finally{ btn.disabled=false; }
+}
+
+/* ---------- Subida del Excel a la bandeja ---------- */
+async function runImportCarga(nombreArchivo, rows){
+  const headerMap=importHeaderMap();
+  const filas=[]; let vacias=0;
+  rows.forEach((row,i)=>{
+    const datos=buildImportPayload(row, headerMap);
+    if(Object.values(datos).every(v=>v==='')){ vacias++; return; }
+    filas.push({fila:i+2, datos});   // +2: encabezado + base 1
+  });
+  if(!filas.length){ toast('El archivo no tiene filas con datos'); return; }
+  document.getElementById('importIntro').classList.add('hidden');
+  document.getElementById('importTemplBtn').classList.add('hidden');
+  document.getElementById('importChooseBtn').classList.add('hidden');
+  document.getElementById('importProgress').classList.remove('hidden');
+  document.getElementById('importProgTxt').textContent=`Subiendo ${filas.length} código(s) a la bandeja de cargas…`;
+  let res=null, err=null;
+  try{ res=await api('POST','/cargas',{archivo:nombreArchivo, filas}); }
+  catch(e){ err=e; }
+  document.getElementById('importProgress').classList.add('hidden');
+  const box=document.getElementById('importResults');
+  if(err){
+    box.innerHTML=`<div style="font-size:14px;color:var(--danger)"><b>✘ No se pudo subir la carga.</b></div>
+      <p style="white-space:normal;font-size:13px">${esc(err.message)}</p>`;
+    toast('No se pudo subir la carga');
+  }else{
+    box.innerHTML=`<div style="font-size:14px"><b style="color:var(--ok)">✔ ${res.codigos} código(s)</b> quedaron pendientes de registrar.</div>
+      ${vacias?`<div style="font-size:12.5px;color:var(--muted)">${vacias} fila(s) vacía(s) omitida(s).</div>`:''}
+      <p style="font-size:13px;margin-bottom:0">Revíselos en <b>Cargas de Excel</b> y registre los que correspondan.</p>
+      <button class="btn-primary" style="margin-top:6px" onclick="closeImport(); showCargas();">Ir a la bandeja de cargas</button>`;
+    toast('Carga subida: '+res.codigos+' código(s) pendientes');
+  }
+  box.classList.remove('hidden');
+  document.getElementById('importCloseBtn').classList.remove('hidden');
 }
 
 /* ====================== UTILIDADES ====================== */

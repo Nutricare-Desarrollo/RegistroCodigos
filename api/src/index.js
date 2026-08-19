@@ -1083,3 +1083,279 @@ app.http('conversion-delete', {
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar', detail: e.message }); }
   }
 });
+
+/* ============================================================
+   MÓDULO: BANDEJA DE CARGAS MASIVAS DE CÓDIGOS
+   ------------------------------------------------------------
+   El Excel ya no crea los registros de una: cae aquí como una CARGA con sus
+   códigos en estado Pendiente. Desde la pantalla de cargas el usuario revisa,
+   corrige y procesa los que quiera; cada código procesado crea su fila en
+   dbo.Solicitud con Estado='Procesado'.
+
+   Acceso: Compras y Administrador (mismo criterio que Catálogos).
+   ============================================================ */
+const puedeCargas = (rol) => rol === 'Compras' || rol === 'Administrador';
+async function requireCargas(request) { return puedeCargas(await getRole(getUser(request))); }
+
+/* Etiquetas de los campos, para que los errores digan "Falta Centro de Costo"
+   y no "falta centro_costo". Solo se usan en mensajes. */
+const FIELD_LABELS = {
+  codigo: 'Código de Producto', nombre: 'Nombre del Producto',
+  departamento: 'Departamento', linea: 'Línea', familia: 'Familia',
+  grupo_articulo: 'Grupo Artículo', centro_costo: 'Centro de Costo',
+  lote: '¿Lleva Lote?', unidad_inv: 'Unidad de Inventario',
+  unidad_compra: 'Unidad de Compra', unidad_venta: 'Unidad de Venta',
+  empaque: 'Empaque', cant_caja: 'Cantidad de Unidades por caja',
+  proveedor: 'Proveedor', pais_origen: 'País de Origen',
+  reg_sanitario: 'Número de Registro Sanitario EMB',
+  fecha_venc: 'Fecha de Vencimiento del EMB',
+  modelo: 'Modelo', marca: 'Marca', clasif_prov: 'Clasificación Proveedor',
+  tipo_implante: 'Tipo Implante', es_implantable: '¿Es Implantable?',
+  desc_detallada: 'Descripción Detallada del Producto', que_es: '¿Qué es?',
+  para_que: '¿Para qué es?', caracteristicas: 'Características', usos: 'Usos',
+  queda_paciente: 'Se queda en el paciente', materiales: 'Materiales'
+};
+const etiqueta = (k) => FIELD_LABELS[k] || k;
+
+/* Un código de una carga debe traer lo mismo que el formulario exige cuando se
+   crea a mano. Se lista aparte (y no se endurece FIELD_MAP.required) para no
+   cambiar el comportamiento de los endpoints del formulario, que ya validan en
+   el navegador. Si se agrega un obligatorio al formulario, agregarlo aquí. */
+const CARGA_REQUIRED = [
+  'codigo', 'nombre', 'departamento', 'linea', 'familia', 'grupo_articulo',
+  'centro_costo', 'lote', 'unidad_inv', 'unidad_compra', 'unidad_venta',
+  'empaque', 'cant_caja', 'proveedor', 'pais_origen', 'reg_sanitario',
+  'fecha_venc', 'modelo', 'marca', 'desc_detallada', 'que_es', 'para_que',
+  'caracteristicas', 'usos', 'queda_paciente', 'materiales'
+];
+const faltantesCarga = (datos) => CARGA_REQUIRED.filter(k => !String((datos && datos[k]) || '').trim());
+
+/* Claves válidas de un código dentro de una carga (las del formulario). */
+const CARGA_KEYS = FIELD_MAP.filter(f => !f.key.startsWith('__')).map(f => f.key);
+function limpiaDatos(obj) {
+  const out = {};
+  CARGA_KEYS.forEach(k => {
+    const v = obj ? obj[k] : '';
+    out[k] = (v === undefined || v === null) ? '' : String(v).trim();
+  });
+  return out;
+}
+
+/* La vista devuelve los conteos como bigint -> string. Se normalizan a número. */
+function cargaRow(r) {
+  return {
+    id: r.id, archivo: r.archivo, fecha: r.fecha, hora: r.hora, usuario: r.usuario,
+    total: Number(r.total || 0), pendientes: Number(r.pendientes || 0),
+    procesados: Number(r.procesados || 0), con_error: Number(r.con_error || 0),
+    estado: r.estado
+  };
+}
+const CARGA_SELECT = `
+SELECT Id AS id, Archivo AS archivo,
+       to_char((FechaCarga AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD') AS fecha,
+       to_char((FechaCarga AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'HH24:MI') AS hora,
+       CargadoPor AS usuario, TotalCodigos AS total, Pendientes AS pendientes,
+       Procesados AS procesados, ConError AS con_error, Estado AS estado
+  FROM dbo.vCarga`;
+
+/* GET /api/cargas?estado=Pendiente|Registrada  -> listado, más reciente primero */
+app.http('cargas-list', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'cargas',
+  handler: async (request, context) => {
+    try {
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene acceso a las cargas' });
+      const estado = (request.query.get('estado') || '').trim();
+      const params = [];
+      let where = '';
+      if (estado) { params.push(estado); where = ` WHERE Estado=$1`; }
+      const r = await query(`${CARGA_SELECT}${where} ORDER BY FechaCarga DESC, Id DESC`, params);
+      return json(200, r.rows.map(cargaRow));
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'Error al listar las cargas', detail: e.message });
+    }
+  }
+});
+
+/* POST /api/cargas  { archivo, filas:[{fila, datos:{...}}] } -> crea la carga */
+app.http('carga-create', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'cargas',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene permiso para subir cargas' });
+      const body = await request.json();
+      const archivo = String(body.archivo || 'Excel').slice(0, 260);
+      const filas = Array.isArray(body.filas) ? body.filas : [];
+      if (!filas.length) return json(400, { error: 'La carga no trae ningún código' });
+
+      const c = await query(
+        `INSERT INTO dbo.Carga (Archivo, CargadoPor) VALUES ($1, $2) RETURNING Id`,
+        [archivo, user ? user.name : null]);
+      const cargaId = c.rows[0].id;
+
+      // Un solo INSERT para todo el archivo: se manda el arreglo como JSONB y
+      // Postgres lo expande. Así no importa si el Excel trae 10 o 2000 filas.
+      const payload = filas.map((f, i) => ({ fila: f.fila || (i + 2), datos: limpiaDatos(f.datos || f) }));
+      await query(
+        `INSERT INTO dbo.CargaDetalle (CargaId, Fila, Datos)
+         SELECT $1, (e->>'fila')::int, e->'datos'
+           FROM jsonb_array_elements($2::jsonb) e`,
+        [cargaId, JSON.stringify(payload)]);
+
+      return json(201, { ok: true, id: cargaId, codigos: payload.length });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudo registrar la carga', detail: e.message });
+    }
+  }
+});
+
+/* GET /api/cargas/{id} -> cabecera + códigos de la carga */
+app.http('carga-get', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'cargas/{id}',
+  handler: async (request, context) => {
+    try {
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene acceso a las cargas' });
+      const id = parseInt(request.params.id, 10);
+      const h = await query(`${CARGA_SELECT} WHERE Id=$1`, [id]);
+      if (!h.rows.length) return json(404, { error: 'Carga no encontrada' });
+      const d = await query(
+        `SELECT Id AS id, Fila AS fila, Datos AS datos, Estado AS estado, Error AS error,
+                SolicitudId AS solicitud_id,
+                to_char((FechaProceso AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha_proceso
+           FROM dbo.CargaDetalle WHERE CargaId=$1 ORDER BY Fila NULLS LAST, Id`, [id]);
+      return json(200, { carga: cargaRow(h.rows[0]), codigos: d.rows });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'Error al obtener la carga', detail: e.message });
+    }
+  }
+});
+
+/* DELETE /api/cargas/{id} -> borra la carga y su detalle.
+   Los códigos ya registrados en dbo.Solicitud NO se tocan. */
+app.http('carga-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'cargas/{id}',
+  handler: async (request, context) => {
+    try {
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene permiso para eliminar cargas' });
+      const r = await query(`DELETE FROM dbo.Carga WHERE Id=$1`, [parseInt(request.params.id, 10)]);
+      if (!r.rowCount) return json(404, { error: 'Carga no encontrada' });
+      return json(200, { ok: true });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudo eliminar la carga', detail: e.message });
+    }
+  }
+});
+
+/* PUT /api/cargas/{id}/codigos/{detId} -> corrige los datos de un código pendiente */
+app.http('carga-detalle-update', {
+  methods: ['PUT'], authLevel: 'anonymous', route: 'cargas/{id}/codigos/{detId}',
+  handler: async (request, context) => {
+    try {
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene permiso para editar cargas' });
+      const id = parseInt(request.params.id, 10);
+      const detId = parseInt(request.params.detId, 10);
+      const body = await request.json();
+      const datos = limpiaDatos(body.datos || body);
+      const r = await query(
+        `UPDATE dbo.CargaDetalle SET Datos=$1, Error=NULL
+          WHERE Id=$2 AND CargaId=$3 AND Estado='Pendiente'`,
+        [JSON.stringify(datos), detId, id]);
+      if (!r.rowCount) return json(404, { error: 'El código no existe o ya fue registrado' });
+      return json(200, { ok: true });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudo guardar el código', detail: e.message });
+    }
+  }
+});
+
+/* DELETE /api/cargas/{id}/codigos/{detId} -> quita un código pendiente de la carga */
+app.http('carga-detalle-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'cargas/{id}/codigos/{detId}',
+  handler: async (request, context) => {
+    try {
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene permiso para editar cargas' });
+      const r = await query(
+        `DELETE FROM dbo.CargaDetalle WHERE Id=$1 AND CargaId=$2 AND Estado='Pendiente'`,
+        [parseInt(request.params.detId, 10), parseInt(request.params.id, 10)]);
+      if (!r.rowCount) return json(404, { error: 'El código no existe o ya fue registrado' });
+      return json(200, { ok: true });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudo quitar el código', detail: e.message });
+    }
+  }
+});
+
+/* POST /api/cargas/{id}/procesar  { ids:[detId,...] }
+   Registra en dbo.Solicitud (Estado='Procesado') los códigos marcados.
+   Cada código se procesa por separado: el que falla queda Pendiente con el
+   motivo guardado y NO detiene a los demás. */
+app.http('carga-procesar', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'cargas/{id}/procesar',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!await requireCargas(request)) return json(403, { error: 'Su rol no tiene permiso para procesar cargas' });
+      const id = parseInt(request.params.id, 10);
+      const body = await request.json().catch(() => ({}));
+      const ids = Array.isArray(body.ids) ? body.ids.map(n => parseInt(n, 10)).filter(n => !isNaN(n)) : [];
+
+      const params = [id];
+      let filtro = '';
+      if (ids.length) { params.push(ids); filtro = ` AND Id = ANY($2::int[])`; }
+      const d = await query(
+        `SELECT Id AS id, Fila AS fila, Datos AS datos FROM dbo.CargaDetalle
+          WHERE CargaId=$1 AND Estado='Pendiente'${filtro} ORDER BY Fila NULLS LAST, Id`, params);
+
+      if (!d.rows.length) return json(400, { error: 'No hay códigos pendientes entre los seleccionados' });
+
+      let procesados = 0;
+      const errores = [];
+
+      for (const row of d.rows) {
+        const datos = row.datos || {};
+        try {
+          const missing = faltantesCarga(datos);
+          if (missing.length) throw new Error('Faltan datos obligatorios: ' + missing.map(etiqueta).join(', '));
+
+          const vals = await resolveRecord(datos);
+          vals['Estado'] = 'Procesado';
+          const cols = Object.keys(vals);
+          const p = cols.map(c => vals[c]);
+          p.push(user ? user.name : null);
+          const ph = p.map((_, i) => '$' + (i + 1)).join(', ');
+          const ins = await query(
+            `INSERT INTO dbo.Solicitud (${cols.concat(['CreadoPor']).join(', ')}) VALUES (${ph}) RETURNING Id`, p);
+
+          await query(
+            `UPDATE dbo.CargaDetalle
+                SET Estado='Procesado', SolicitudId=$1, Error=NULL,
+                    FechaProceso=(now() at time zone 'utc'), ProcesadoPor=$2
+              WHERE Id=$3`,
+            [ins.rows[0].id, user ? user.name : null, row.id]);
+          procesados++;
+        } catch (err) {
+          const motivo = isUnique(err)
+            ? `El código "${datos.codigo || ''}" ya existe en los registros`
+            : err.message;
+          await query(`UPDATE dbo.CargaDetalle SET Error=$1 WHERE Id=$2`, [motivo, row.id]);
+          errores.push({ id: row.id, fila: row.fila, codigo: datos.codigo || '', error: motivo });
+        }
+      }
+
+      const h = await query(`${CARGA_SELECT} WHERE Id=$1`, [id]);
+      return json(200, {
+        ok: true, procesados, errores,
+        carga: h.rows.length ? cargaRow(h.rows[0]) : null
+      });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudieron procesar los códigos', detail: e.message });
+    }
+  }
+});
