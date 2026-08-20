@@ -563,7 +563,8 @@ const ORD_CAT = {
   bodegas:    'cat.OP_Bodega',
   proveedores:'cat.OP_Proveedor',
   transporte: 'cat.OP_Transporte',
-  sector:     'cat.OP_Sector'
+  sector:     'cat.OP_Sector',
+  justificaciones: 'cat.OP_Justificacion'
 };
 const ORD_FIELDS = [
   { key:'codigo_producto', col:'ProductoId',          type:'cat', cat:'productos', required:true },
@@ -579,6 +580,10 @@ const ORD_FIELDS = [
   { key:'precio_especial', col:'PrecioEspecial',      type:'decimal' },
   { key:'num_emb',         col:'NumeroEMB',           type:'text' },
   { key:'fecha_venc_emb',  col:'FechaVencimientoEMB', type:'date' },
+  // Obligatoria en el formulario, no acá: la carga masiva por Excel entra por
+  // este mismo endpoint y exigirla rechazaría filas que hoy sí se cargan
+  // (mismo criterio que Cajas, Bodega y las demás). Ver el README.
+  { key:'justificacion',   col:'JustificacionId',     type:'cat', cat:'justificaciones' },
   { key:'observaciones',   col:'Observaciones',       type:'text' }
 ];
 const ORD_SELECT_FULL = `
@@ -587,13 +592,15 @@ SELECT o.Id AS id, p.Nombre AS codigo_producto, o.Descripcion AS descripcion,
        b.Nombre AS bodega, pr.Nombre AS proveedor, tr.Nombre AS transporte, se.Nombre AS sector,
        to_char(o.FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega, o.PrecioEspecial AS precio_especial,
        o.NumeroEMB AS num_emb, to_char(o.FechaVencimientoEMB, 'YYYY-MM-DD') AS fecha_venc_emb,
+       ju.Nombre AS justificacion,
        o.Observaciones AS observaciones, o.Estado AS estado
 FROM dbo.OrdenPedido o
 JOIN cat.OP_Producto  p  ON p.Id=o.ProductoId
 LEFT JOIN cat.OP_Bodega    b  ON b.Id=o.BodegaId
 JOIN cat.OP_Proveedor pr ON pr.Id=o.ProveedorId
 LEFT JOIN cat.OP_Transporte tr ON tr.Id=o.TransporteId
-LEFT JOIN cat.OP_Sector    se ON se.Id=o.SectorId`;
+LEFT JOIN cat.OP_Sector    se ON se.Id=o.SectorId
+LEFT JOIN cat.OP_Justificacion ju ON ju.Id=o.JustificacionId`;
 
 async function ordResolve(body) {
   const out = {};
@@ -637,9 +644,9 @@ app.http('catalogos-ordenes', {
     try {
       const one = async (t) => (await query(
         `SELECT Nombre FROM ${t} WHERE Activo=true ORDER BY Nombre`)).rows.map(r => r.nombre);
-      const [productos, bodegas, proveedores, transporte, sector] = await Promise.all([
+      const [productos, bodegas, proveedores, transporte, sector, justificaciones] = await Promise.all([
         one('cat.OP_Producto'), one('cat.OP_Bodega'), one('cat.OP_Proveedor'),
-        one('cat.OP_Transporte'), one('cat.OP_Sector')
+        one('cat.OP_Transporte'), one('cat.OP_Sector'), one('cat.OP_Justificacion')
       ]);
       // Mapa de conversiones (código de producto -> unidades por caja) para autocompletar en Órdenes.
       const convRows = (await query(
@@ -647,7 +654,7 @@ app.http('catalogos-ordenes', {
          FROM dbo.Conversion c JOIN cat.OP_Producto p ON p.Id = c.ProductoId`)).rows;
       const conversiones = {};
       for (const r of convRows) conversiones[r.codigo] = r.upc;
-      return json(200, { productos, bodegas, proveedores, transporte, sector, conversiones });
+      return json(200, { productos, bodegas, proveedores, transporte, sector, justificaciones, conversiones });
     } catch (e) { context.error(e); return json(500, { error: 'Error al cargar catálogos', detail: e.message }); }
   }
 });
@@ -717,6 +724,7 @@ app.http('ordenes-list', {
         `SELECT Id AS id, Producto AS codigo_producto, Descripcion AS descripcion,
                 Cajas AS cajas, TotalUnidades AS total_unidades, Bodega AS bodega,
                 Proveedor AS proveedor, to_char(FechaEntrega, 'YYYY-MM-DD') AS fecha_entrega,
+                Justificacion AS justificacion,
                 to_char((FechaCreacion AT TIME ZONE 'UTC') AT TIME ZONE 'America/Costa_Rica', 'YYYY-MM-DD HH24:MI') AS fecha_creacion,
                 Estado AS estado
          FROM dbo.vOrdenPedido ORDER BY Id DESC`);

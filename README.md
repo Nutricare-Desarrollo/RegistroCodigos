@@ -72,6 +72,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V5_Conversiones.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V6_Modelo_Marca_Adjuntos_Multiples.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V7_Cargas.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V8_Justificacion.sql
    ```
 3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
@@ -298,8 +299,8 @@ llegue al usuario:
 En **Nuevo Registro** de Órdenes son obligatorios (asterisco rojo en la etiqueta y borde rojo si
 se intenta guardar sin ellos): **Código del Producto, Descripción del Producto, Cajas,
 Unidades x Caja, Total de Unidades, Bodega, Proveedor, Fecha de entrega al cliente,
-Número de EMB** y **Fecha de Vencimiento de EMB**. Opcionales: Transporte, Sector,
-Precio Especial y Observaciones.
+Número de EMB, Fecha de Vencimiento de EMB** y **Justificación**. Opcionales: Transporte,
+Sector, Precio Especial y Observaciones.
 
 **Unidades x Caja** es obligatoria pero **no se digita**: la trae Conversiones al elegir el
 producto. Si ese producto no tiene conversión registrada, el campo queda vacío y al guardar el
@@ -310,6 +311,24 @@ Los obligatorios se declaran con `req:true` en `MODULES.ordenes.sections` (`fron
 La API mantiene su propia validación mínima (`ORD_FIELDS` con `required`: producto, descripción y
 proveedor), a propósito: la carga masiva de Órdenes por Excel entra por el mismo endpoint y
 endurecerla ahí rechazaría filas que hoy sí se cargan.
+
+## Justificación (Órdenes de Pedido)
+
+Lista desplegable **obligatoria**, después de *Fecha de Vencimiento de EMB* y antes de
+*Observaciones*. Se gestiona desde **Catálogos → Justificación** o con el botón **＋** junto al
+campo, que como en las demás listas solo ven **Compras** y **Administrador** (`canManageCat()`).
+También sale como columna con filtro en el grid principal y como desplegable en la plantilla de
+Excel: las tres cosas salen solas de declarar el campo con `type:"list"` en
+`MODULES.ordenes.sections` y la columna en `gridCols`.
+
+- Base: `cat.OP_Justificacion` + `dbo.OrdenPedido.JustificacionId` (**migración `V8`**). La
+  columna es **NULL en la base** aunque el campo sea obligatorio en el formulario, para no
+  invalidar las órdenes que ya existen.
+- `V8` también agrega `Justificacion` a `dbo.vOrdenPedido`, **al final** de la lista de columnas:
+  `CREATE OR REPLACE VIEW` en PostgreSQL solo admite agregar columnas al final.
+- **El catálogo se crea vacío.** Como el campo es obligatorio, no se puede guardar una orden nueva
+  hasta que alguien agregue al menos una opción. `V8` trae un `INSERT` de ejemplo comentado al
+  final para dejar la lista cargada de una vez.
 
 ## Centro de Costo
 

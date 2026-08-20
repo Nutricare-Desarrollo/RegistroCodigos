@@ -613,6 +613,7 @@ const MODULES = {
       {k:"codigo_producto",l:"Código",tag:true},{k:"descripcion",l:"Descripción"},
       {k:"cajas",l:"Cajas"},{k:"total_unidades",l:"Total Unid."},
       {k:"bodega",l:"Bodega"},{k:"proveedor",l:"Proveedor"},{k:"fecha_entrega",l:"Fecha entrega"},
+      {k:"justificacion",l:"Justificación"},
       {k:"fecha_creacion",l:"Fecha de creación",dateRange:true},{k:"estado",l:"Estado",estado:true}
     ],
     sections:[{title:"Solicitud de Orden de Pedido", fields:[
@@ -631,12 +632,13 @@ const MODULES = {
       {key:"precio_especial", label:"Precio Especial", type:"number"},
       {key:"num_emb", label:"Número de EMB", type:"text", req:true},
       {key:"fecha_venc_emb", label:"Fecha de Vencimiento de EMB", type:"date", req:true},
+      {key:"justificacion", label:"Justificación", type:"list", list:"justificaciones", req:true},
       {key:"observaciones", label:"Observaciones", type:"textarea", full:true}
     ]}],
     lists:{}, hier:{}, records:[]
   }
 };
-const LIST_LABELS = {departamentos:"Departamentos",grupo_articulo:"Grupo Artículo",centro_costo:"Centro de Costo",lote:"¿Lleva Lote?",unidades:"Unidades",empaque:"Empaque",proveedores:"Proveedores",origen:"País de Origen",tipo_implante:"Tipo Implante",es_implantable:"¿Es Implantable?",modelos:"Modelos",productos:"Productos",bodegas:"Bodegas",transporte:"Transporte",sector:"Sector"};
+const LIST_LABELS = {departamentos:"Departamentos",grupo_articulo:"Grupo Artículo",centro_costo:"Centro de Costo",lote:"¿Lleva Lote?",unidades:"Unidades",empaque:"Empaque",proveedores:"Proveedores",origen:"País de Origen",tipo_implante:"Tipo Implante",es_implantable:"¿Es Implantable?",modelos:"Modelos",productos:"Productos",bodegas:"Bodegas",transporte:"Transporte",sector:"Sector",justificaciones:"Justificación"};
 const MOD_LABELS = {codigos:"Creación de Códigos", ordenes:"Orden de Pedido"};
 
 let ACT="codigos";
@@ -762,7 +764,7 @@ async function loadCatalogsFor(id){
     m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable,modelos:c.modelos||[]};
     m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}};
   } else {
-    m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector};
+    m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector,justificaciones:c.justificaciones||[]};
     m.hier={};
     m.conv=c.conversiones||{};   // mapa código de producto -> unidades por caja (para el cálculo en Órdenes)
   }
