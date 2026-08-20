@@ -154,20 +154,52 @@ async function catId(table, name) {
   if (!r.rows.length) throw new Error(`Valor no encontrado en ${table}: "${name}"`);
   return r.rows[0].id;
 }
-async function depId(name) { return catId('cat.Departamento', name); }
-async function lineaId(name, departamentoId) {
+async function depId(name) {
   if (!name) return null;
-  const r = await query(
-    `SELECT Id FROM cat.Linea WHERE Nombre=$1 AND DepartamentoId=$2 LIMIT 1`, [name, departamentoId]);
-  if (!r.rows.length) throw new Error(`Línea no encontrada: "${name}"`);
+  const r = await query(`SELECT Id FROM cat.Departamento WHERE Nombre=$1 LIMIT 1`, [name]);
+  if (!r.rows.length) throw new Error(`Departamento no encontrado: "${name}"`);
   return r.rows[0].id;
 }
-async function familiaId(name, lineaIdVal) {
+
+/* Línea y Familia cuelgan de su nivel superior, así que el MISMO nombre puede
+   existir bajo varios padres. Cuando el valor existe pero no bajo el padre que
+   trae el registro, el mensaje dice a qué padre pertenece: antes decía "no
+   encontrada" y mandaba a buscar en el catálogo un valor que sí estaba ahí. */
+async function lineaId(name, departamentoId, depNombre) {
   if (!name) return null;
+  if (!departamentoId) {
+    throw new Error(`Para validar la Línea "${name}" primero hace falta un Departamento válido`);
+  }
+  const r = await query(
+    `SELECT Id FROM cat.Linea WHERE Nombre=$1 AND DepartamentoId=$2 LIMIT 1`, [name, departamentoId]);
+  if (r.rows.length) return r.rows[0].id;
+  const otros = await query(
+    `SELECT d.Nombre AS dep FROM cat.Linea l
+       JOIN cat.Departamento d ON d.Id = l.DepartamentoId
+      WHERE l.Nombre=$1 ORDER BY d.Nombre`, [name]);
+  if (otros.rows.length) {
+    throw new Error(`La Línea "${name}" no pertenece al Departamento "${depNombre}", `
+      + `sino a: ${otros.rows.map(x => x.dep).join(', ')}`);
+  }
+  throw new Error(`Línea no encontrada: "${name}"`);
+}
+async function familiaId(name, lineaIdVal, lineaNombre) {
+  if (!name) return null;
+  if (!lineaIdVal) {
+    throw new Error(`Para validar la Familia "${name}" primero hace falta una Línea válida`);
+  }
   const r = await query(
     `SELECT Id FROM cat.Familia WHERE Nombre=$1 AND LineaId=$2 LIMIT 1`, [name, lineaIdVal]);
-  if (!r.rows.length) throw new Error(`Familia no encontrada: "${name}"`);
-  return r.rows[0].id;
+  if (r.rows.length) return r.rows[0].id;
+  const otros = await query(
+    `SELECT l.Nombre AS lin FROM cat.Familia f
+       JOIN cat.Linea l ON l.Id = f.LineaId
+      WHERE f.Nombre=$1 ORDER BY l.Nombre`, [name]);
+  if (otros.rows.length) {
+    throw new Error(`La Familia "${name}" no pertenece a la Línea "${lineaNombre}", `
+      + `sino a: ${otros.rows.map(x => x.lin).join(', ')}`);
+  }
+  throw new Error(`Familia no encontrada: "${name}"`);
 }
 async function modeloId(name) { return catId('cat.Modelo', name); }
 
@@ -175,8 +207,8 @@ async function modeloId(name) { return catId('cat.Modelo', name); }
 async function resolveRecord(body) {
   const out = {};
   const dId = await depId(body.departamento);
-  const lId = await lineaId(body.linea, dId);
-  const fId = await familiaId(body.familia, lId);
+  const lId = await lineaId(body.linea, dId, body.departamento);
+  const fId = await familiaId(body.familia, lId, body.linea);
   for (const f of FIELD_MAP) {
     const v = body[f.key];
     if (f.type === 'text')        out[f.col] = v ? String(v) : null;
@@ -315,7 +347,7 @@ app.http('catalogo-add', {
         await query(`INSERT INTO cat.Linea (DepartamentoId, Nombre) VALUES ($1, $2)`, [dId, valor]);
       } else if (tipo === 'familias') {
         const dId = await depId(body.parentDept);
-        const lId = await lineaId(body.parent, dId);
+        const lId = await lineaId(body.parent, dId, body.parentDept);
         await query(`INSERT INTO cat.Familia (LineaId, Nombre) VALUES ($1, $2)`, [lId, valor]);
       } else if (tipo === 'marcas') {
         const moId = await modeloId(body.parent);
@@ -351,7 +383,7 @@ async function catScope(tipo, parent, parentDept) {
   }
   if (tipo === 'familias') {
     const t = { table: 'cat.Familia' };
-    if (parent) { t.col = 'LineaId'; t.val = await lineaId(parent, parentDept ? await depId(parentDept) : null); }
+    if (parent) { t.col = 'LineaId'; t.val = await lineaId(parent, parentDept ? await depId(parentDept) : null, parentDept); }
     return t;
   }
   if (tipo === 'marcas') {

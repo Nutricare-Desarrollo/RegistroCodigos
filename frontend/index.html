@@ -122,6 +122,8 @@ button.tag:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .req{color:var(--danger)}
 /* Campo obligatorio sin llenar, tras intentar guardar. */
 .campo-falta{border-color:var(--danger)!important;box-shadow:0 0 0 3px rgba(192,57,43,.13)}
+.campo-aviso{display:block;margin-top:5px;color:#9a6a00;font-size:12px;line-height:1.35}
+.campo-aviso:empty{display:none}
 
 
 /* ===== LAYOUT MULTI-MÓDULO (menú lateral Nutricare) ===== */
@@ -2214,16 +2216,58 @@ function cargaProcesarMarcados(){
 // Sugerencias del catálogo. En los campos jerárquicos (Línea, Familia, Grupo
 // Artículo) se ofrecen todas las opciones: la validación del padre-hijo la hace
 // la API al procesar, y aquí el usuario está corrigiendo texto que vino de Excel.
-function cargaSugerencias(f){
+/* Sugerencias para un campo del código de una carga.
+   En los campos dependientes se acotan al valor que tenga el PADRE en ese
+   momento. Ofrecer todas las líneas del catálogo era la causa del error
+   "Línea no encontrada": el usuario elegía de la lista una línea que existe
+   pero que cuelga de otro departamento, y la API la rechazaba al procesar.
+   Si el padre está vacío o no está en el catálogo se ofrecen todos los
+   valores, que es más útil que no ofrecer ninguno. */
+function cargaSugerencias(f, datos){
   const m=codModule();
   if(f.type==='list') return (m.lists&&m.lists[f.list])||[];
-  if(f.type==='dependent'){
-    const h=m.hier&&m.hier[f.key]; if(!h||!h.map) return [];
-    const out=new Set();
-    Object.keys(h.map).forEach(k=>(h.map[k]||[]).forEach(v=>out.add(v)));
-    return [...out].sort((a,b)=>a.localeCompare(b));
+  if(f.type!=='dependent') return [];
+  const h=m.hier&&m.hier[f.key]; if(!h||!h.map) return [];
+  const padre=String((datos&&datos[h.parent])||'').trim();
+  if(padre && Array.isArray(h.map[padre])){
+    return h.map[padre].slice().sort((a,b)=>a.localeCompare(b,'es'));
   }
-  return [];
+  const out=new Set();
+  Object.keys(h.map).forEach(k=>(h.map[k]||[]).forEach(v=>out.add(v)));
+  return [...out].sort((a,b)=>a.localeCompare(b,'es'));
+}
+
+/* Rearma las sugerencias de los dependientes con el padre actual y avisa si el
+   valor escrito no pertenece a ese padre — que es exactamente lo que la API
+   rechaza al procesar. No borra el valor: lo marca, porque acá se está
+   corrigiendo un Excel y perder lo que venía es peor que verlo señalado. */
+function cargaCodSyncDeps(){
+  const m=codModule(), hier=m.hier||{};
+  allFieldsOf(m).filter(f=>f.type==='dependent' && hier[f.key]).forEach(f=>{
+    const h=hier[f.key];
+    const el=document.getElementById('cfld_'+f.key); if(!el) return;
+    const pe=document.getElementById('cfld_'+h.parent);
+    const padre=pe?String(pe.value||'').trim():'';
+    const opciones=cargaSugerencias(f, {[h.parent]:padre});
+    const dl=document.getElementById('dlc_'+f.key);
+    if(dl){
+      dl.innerHTML='';
+      opciones.forEach(v=>{ const o=document.createElement('option'); o.value=v; dl.appendChild(o); });
+    }
+    const val=String(el.value||'').trim();
+    const acotado=!!(padre && Array.isArray(h.map[padre]));
+    const malo=!!(val && acotado && !opciones.includes(val));
+    el.classList.toggle('campo-falta', malo);
+    const av=document.getElementById('cavi_'+f.key); if(!av) return;
+    if(malo){
+      av.textContent=`«${val}» no pertenece a «${padre}». `
+        +(!opciones.length ? `«${padre}» no tiene ${f.label.toLowerCase()} en el catálogo.`
+          : opciones.length===1 ? `La única opción es «${opciones[0]}».`
+          : `Elija una de las ${opciones.length} opciones de la lista.`);
+    } else if(val && padre && !acotado){
+      av.textContent=`«${padre}» no está en el catálogo, así que no se puede comprobar la ${f.label.toLowerCase()}.`;
+    } else av.textContent='';
+  });
 }
 function cargaCodEditar(detId){
   const row=CARGA_COD.find(r=>r.id===detId); if(!row) return;
@@ -2246,8 +2290,10 @@ function cargaCodEditar(detId){
         el=document.createElement('input');
         el.type = f.type==='number' ? 'number' : f.type==='date' ? 'date' : 'text';
         if(f.max) el.maxLength=f.max;
-        const sug=cargaSugerencias(f);
-        if(sug.length){
+        const sug=cargaSugerencias(f, d);
+        // El dependiente siempre lleva datalist, aunque el padre de entrada no
+        // dé opciones: cargaCodSyncDeps() lo vuelve a llenar al cambiar el padre.
+        if(sug.length || f.type==='dependent'){
           const dlId='dlc_'+f.key;
           const dl=document.createElement('datalist'); dl.id=dlId;
           sug.forEach(v=>{ const o=document.createElement('option'); o.value=v; dl.appendChild(o); });
@@ -2255,9 +2301,27 @@ function cargaCodEditar(detId){
         }
       }
       el.id='cfld_'+f.key; el.value=val; el.disabled=ro;
-      wrap.appendChild(el); c.appendChild(wrap);
+      wrap.appendChild(el);
+      if(f.type==='dependent'){
+        const av=document.createElement('small');
+        av.className='campo-aviso'; av.id='cavi_'+f.key;
+        wrap.appendChild(av);
+      }
+      c.appendChild(wrap);
     });
   });
+  // Los dependientes se recalculan al tocar el padre (y al tocarse ellos mismos).
+  if(!ro){
+    const claves=new Set();
+    allFieldsOf(codModule()).filter(f=>f.type==='dependent' && (codModule().hier||{})[f.key])
+      .forEach(f=>{ claves.add(f.key); claves.add(codModule().hier[f.key].parent); });
+    claves.forEach(k=>{
+      const e=document.getElementById('cfld_'+k); if(!e) return;
+      e.addEventListener('input', cargaCodSyncDeps);
+      e.addEventListener('change', cargaCodSyncDeps);
+    });
+  }
+  cargaCodSyncDeps();
   document.getElementById('cargaCodSaveBtn').classList.toggle('hidden', ro);
   document.getElementById('cargaCodModal').classList.remove('hidden');
 }
@@ -2270,10 +2334,18 @@ async function cargaCodGuardar(){
     datos[f.key]=el? String(el.value||'').trim() : '';
   });
   const faltan=allFieldsOf(codModule()).filter(f=>f.req && !datos[f.key]).map(f=>f.label);
+  // Dependiente cuyo valor no cuelga del padre elegido: lo marcó cargaCodSyncDeps().
+  const incoh=allFieldsOf(codModule()).filter(f=>{
+    const e=document.getElementById('cfld_'+f.key);
+    return f.type==='dependent' && e && e.classList.contains('campo-falta');
+  }).map(f=>f.label);
   const errBox=document.getElementById('cargaCodError');
-  if(faltan.length){
-    errBox.textContent='Falta completar: '+faltan.join(', ')+'. Puede guardar así, pero el código no se podrá registrar.';
-  } else errBox.textContent='';
+  const avisos=[];
+  if(faltan.length) avisos.push('Falta completar: '+faltan.join(', ')+'.');
+  if(incoh.length)  avisos.push('No corresponde al nivel superior: '+incoh.join(', ')+'.');
+  errBox.textContent = avisos.length
+    ? avisos.join(' ')+' Puede guardar así, pero el código no se podrá registrar.'
+    : '';
   const btn=document.getElementById('cargaCodSaveBtn'); btn.disabled=true;
   try{
     await api('PUT','/cargas/'+CARGA.id+'/codigos/'+row.id,{datos});

@@ -225,6 +225,26 @@ todo** y procesar solo esos.
 - **Desmarcar todo** sí quita todas las marcas, filtradas o no.
 - El pie muestra **"N códigos de M"** con **Quitar filtros**, y cada carga se abre sin filtros.
 
+### Línea y Familia dentro de la carga
+
+`Línea` cuelga de `Departamento` y `Familia` cuelga de `Línea`, así que **el mismo nombre puede
+existir bajo varios padres**. En el modal del código, las sugerencias de Línea, Familia y Grupo
+Artículo se acotan al valor que tenga el **padre en ese momento**: antes se ofrecían todas las
+líneas del catálogo y el usuario elegía de la lista una línea válida pero **de otro departamento**,
+que la API rechazaba al procesar con un `Línea no encontrada` que mandaba a buscar en el catálogo
+un valor que sí estaba ahí.
+
+- Al cambiar el padre se rearma la lista del hijo. El valor **no se borra**: si dejó de
+  corresponder, el campo se marca en rojo con el detalle debajo (*«X» no pertenece a «Y»*),
+  porque acá se está corrigiendo un Excel y perder lo que venía es peor que verlo señalado.
+- Se puede guardar así — el modal acepta texto libre a propósito —, pero el aviso dice que el
+  código no se podrá registrar.
+- Si el padre no está en el catálogo se ofrecen todos los valores y se avisa que no se puede
+  comprobar la coherencia.
+- Del lado de la API, `lineaId`/`familiaId` ahora dicen **a qué padre pertenece** el valor
+  (*La Línea "X" no pertenece al Departamento "Y", sino a: Z*) y, si falta el padre, lo dicen en
+  vez de culpar al hijo.
+
 **Procesar** crea cada código en `dbo.Solicitud` con **Estado = Procesado**. Cada código se
 procesa por separado: si un valor no existe en los catálogos o falta un obligatorio, ese
 código **queda pendiente con el motivo visible** en el grid y los demás sí se registran.
