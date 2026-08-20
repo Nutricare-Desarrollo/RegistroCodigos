@@ -312,6 +312,25 @@ La API mantiene su propia validación mínima (`ORD_FIELDS` con `required`: prod
 proveedor), a propósito: la carga masiva de Órdenes por Excel entra por el mismo endpoint y
 endurecerla ahí rechazaría filas que hoy sí se cargan.
 
+## Listas vacías en el formulario
+
+Los catálogos se cargan una vez al entrar al módulo (`switchModule` → `loadCatalogsFor`). Si esa
+llamada falla —y el **arranque en frío** de Azure Functions puede tumbar la primera, ver la
+sección de conexión más abajo— el formulario se abría con **todas las listas vacías** y el único
+síntoma era un `Sin coincidencias` al desplegarlas, que hacía pensar que el catálogo no tenía el
+valor. Tres cambios:
+
+- `openForm()` llama a **`ensureCatalogs()`**: si las listas están vacías reintenta cargarlas, y
+  si vuelve a fallar avisa con el motivo (*"No se pudieron cargar las listas: …"*) en vez de abrir
+  un formulario inservible.
+- El combo distingue los dos casos. `Sin coincidencias` solo si **hay** opciones y ninguna
+  coincide con lo escrito; con la lista vacía dice *"No hay opciones de &lt;campo&gt;. Recargue la
+  página; si sigue vacía, agréguelas en Catálogos"*.
+- `dependentSelect()` ya no explota sin jerarquía. `M().hier[f.key].parent` tiraba `TypeError`
+  cuando `hier` venía vacío y **`buildForm` se cortaba ahí**: se dibujaba Departamento y se
+  perdían Línea, Familia, Grupo Artículo, Centro de Costo y **todas las secciones siguientes**,
+  sin ningún error a la vista.
+
 ## Órdenes: el producto en el grid y en el Excel
 
 `cat.OP_Producto` guarda el producto como **`CODIGO — Descripción`** (un solo catálogo), y el

@@ -953,10 +953,22 @@ let CUR_REC={};   // registro actualmente abierto en el formulario (para el PDF)
 const ORD_CACHE_FIELDS=['proveedor','transporte','sector','fecha_entrega'];
 function ordCacheLoad(){ try{ return JSON.parse(localStorage.getItem('ord_defaults')||'{}')||{}; }catch{ return {}; } }
 function ordCacheSave(rec){ try{ const o={}; ORD_CACHE_FIELDS.forEach(k=>o[k]=rec[k]||''); localStorage.setItem('ord_defaults', JSON.stringify(o)); }catch{} }
+/* Los catálogos se cargan al entrar al módulo (switchModule). Si esa llamada
+   falló —el arranque en frío de Azure Functions puede tumbar la primera— el
+   formulario se abría con todas las listas vacías y el único síntoma era un
+   "Sin coincidencias" al desplegarlas. Acá se reintenta antes de construirlo. */
+async function ensureCatalogs(){
+  const m=M();
+  if(m.lists && Object.keys(m.lists).length && Object.values(m.lists).some(v=>(v||[]).length)) return true;
+  try{ await loadCatalogsFor(ACT); }
+  catch(e){ toast("No se pudieron cargar las listas: "+e.message); return false; }
+  return true;
+}
 async function openForm(id){
   editingId=id||null;
   ADJ_PENDIENTES=[];                        // los adjuntos pendientes no se arrastran de un formulario a otro
   let rec={};
+  await ensureCatalogs();
   if(id){ try{ rec=await api('GET', M().api.rec+'/'+id); }catch(e){ toast("No se pudo cargar: "+e.message); return; } }
   // Nueva orden: precargar valores frecuentes desde caché (no aplica al editar).
   if(!id && ACT==='ordenes') rec=ordCacheLoad();
@@ -1216,7 +1228,16 @@ function makeCombo(id, options, val, cfg){
     const fTxt=(filter||"").trim().toLowerCase();
     const list=curOptions.filter(o=>String(o).toLowerCase().includes(fTxt));
     panel.innerHTML="";
-    if(!list.length){ const d=document.createElement('div'); d.className="cmb-empty"; d.textContent="Sin coincidencias"; panel.appendChild(d); return; }
+    if(!list.length){
+      const d=document.createElement('div'); d.className="cmb-empty";
+      // "Sin coincidencias" solo aplica si HAY opciones y ninguna coincide con lo
+      // escrito. Con la lista vacía el mensaje mentía: hacía creer que el catálogo
+      // no tenía ese valor cuando en realidad nunca se cargó (p. ej. /catalogos
+      // falló por un arranque en frío) o el catálogo está vacío de verdad.
+      d.textContent = curOptions.length ? "Sin coincidencias"
+        : (cfg.vacio || "La lista no tiene opciones. Recargue la página; si sigue vacía, agréguelas en Catálogos.");
+      panel.appendChild(d); return;
+    }
     list.forEach(o=>{
       const it=document.createElement('div'); it.className="cmb-opt"+(o===hidden.value?" sel":""); it.textContent=o;
       it.addEventListener('mousedown', e=>{ e.preventDefault(); choose(o); });
@@ -1255,7 +1276,8 @@ function codeFromProducto(nombre){
 }
 function comboWithPlus(f,val){
   const row=document.createElement('div'); row.className="combo-row";
-  const ctrl=makeCombo("fld_"+f.key, M().lists[f.list]||[], val, {placeholder:"-- Seleccione --"});
+  const ctrl=makeCombo("fld_"+f.key, M().lists[f.list]||[], val, {placeholder:"-- Seleccione --",
+    vacio:`No hay opciones de ${f.label}. Recargue la página; si sigue vacía, agréguelas en Catálogos${canManageCat()?" o con el botón ＋":""}.`});
   row.appendChild(ctrl.wrap);
   // Órdenes: al elegir el Código del Producto, autocompletar la "Descripción del Producto"
   // y las "Unidades x Caja" según la conversión del producto (y recalcular el Total).
@@ -1355,8 +1377,17 @@ function wireOrdenConversion(){
 }
 function dependentSelect(f,rec){
   const row=document.createElement('div'); row.className="combo-row";
-  const h=M().hier[f.key];
-  const ctrl=makeCombo("fld_"+f.key, [], rec[f.key]||"", {placeholder:"(seleccione el nivel anterior)"});
+  // Sin jerarquía (los catálogos no cargaron) se devuelve un combo vacío en vez
+  // de reventar: antes `M().hier[f.key].parent` tiraba TypeError y buildForm se
+  // cortaba ahí, dejando el formulario a medio construir sin ningún aviso.
+  const h=(M().hier||{})[f.key];
+  const ctrl=makeCombo("fld_"+f.key, [], rec[f.key]||"",
+    {placeholder: h? "(seleccione el nivel anterior)" : "-- Seleccione --",
+     vacio: h? undefined : `No hay opciones de ${f.label}. Recargue la página; si sigue vacía, revise Catálogos.`});
+  if(!h){
+    row.appendChild(ctrl.wrap);
+    return row;
+  }
   const refresh=()=>{
     const parentVal=(document.getElementById('fld_'+h.parent)||{}).value;
     const opts = parentVal && h.map[parentVal] ? h.map[parentVal] : [];
