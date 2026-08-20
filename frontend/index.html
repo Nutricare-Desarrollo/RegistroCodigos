@@ -885,7 +885,8 @@ function filteredRecords(){
         return true;
       }
       const f=(flt||'').trim().toLowerCase(); if(!f) return true;
-      return String(r[k]==null?'':r[k]).toLowerCase().includes(f);
+      const v=valorVisible(ACT, k, r[k]);          // se filtra por lo que se ve en el grid
+      return String(v==null?'':v).toLowerCase().includes(f);
     });
   });
 }
@@ -912,12 +913,12 @@ function renderBody(){
       if(c.estado) return `<td>${estadoBadge(r.estado)}</td>`;
       // La columna Código abre el registro al hacer clic: editar, o ver si es de solo lectura.
       if(c.tag){
-        const v=r[c.k];
+        const v=valorVisible(ACT, c.k, r[c.k]);
         if(v===undefined||v===null||v==='') return '<td></td>';
         const t = ro ? 'Ver registro (Procesado · solo lectura)' : 'Editar registro';
         return `<td><button type="button" class="tag" title="${t}" onclick="openForm(${r.id})">${esc(v)}</button></td>`;
       }
-      return `<td>${esc(r[c.k])}</td>`;
+      return `<td>${esc(valorVisible(ACT, c.k, r[c.k]))}</td>`;
     }).join('');
     const delBtn = canDelete()? `<button class="icon-btn del-btn" title="Eliminar" onclick="askDelete(${r.id})">🗑️</button>` : '';
     const editBtn = ro
@@ -927,6 +928,14 @@ function renderBody(){
     tr.innerHTML=cells+`<td><div class="actions-cell" style="justify-content:flex-end">${editBtn}${delBtn}</div></td>`;
     b.appendChild(tr);
   });
+}
+/* Órdenes guarda el producto como "CODIGO — Descripción" porque el catálogo es
+   uno solo. En el grid y en el Excel se muestra SOLO el código: la descripción
+   ya va en su propia columna. La API acepta las dos formas al importar
+   (ordProductoId), así que el Excel exportado se puede volver a subir. */
+const SOLO_CODIGO = { ordenes: ['codigo_producto'] };
+function valorVisible(modId, key, val){
+  return (SOLO_CODIGO[modId]||[]).includes(key) ? codeFromProducto(val) : val;
 }
 function estadoBadge(e){ const v=e||'Pendiente'; return `<span class="badge ${v==='Procesado'?'badge-proc':'badge-pend'}">${esc(v)}</span>`; }
 function onFilter(k,v){ COL_FILTERS[k]=v; renderBody(); }
@@ -1659,7 +1668,10 @@ async function exportExcel(){
   try{ full=await Promise.all(visibles.map(r=>api('GET', m.api.rec+'/'+r.id))); }
   catch(e){ toast("Error al exportar: "+e.message); return; }
   const fields=allFields(); const headers=fields.map(f=>f.label);
-  const rows=full.map(r=>{ const o={}; fields.forEach(f=>{ o[f.label]=(r[f.key]==null)?"":r[f.key]; }); return o; });
+  const rows=full.map(r=>{ const o={}; fields.forEach(f=>{
+    const v=valorVisible(ACT, f.key, r[f.key]);
+    o[f.label]=(v==null)?"":v;
+  }); return o; });
   const ws=XLSX.utils.json_to_sheet(rows,{header:headers});
   ws['!cols']=headers.map(h=>{ let mx=h.length; rows.forEach(r=>{const v=String(r[h]||"");if(v.length>mx)mx=v.length;}); return {wch:Math.min(Math.max(mx+2,12),55)}; });
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Registros");

@@ -602,6 +602,26 @@ LEFT JOIN cat.OP_Transporte tr ON tr.Id=o.TransporteId
 LEFT JOIN cat.OP_Sector    se ON se.Id=o.SectorId
 LEFT JOIN cat.OP_Justificacion ju ON ju.Id=o.JustificacionId`;
 
+/* El producto se guarda como "CODIGO — Descripción" (así está en cat.OP_Producto).
+   El Excel que exporta el grid trae SOLO el código en esa columna —la descripción
+   va en la suya—, así que al importar se acepta cualquiera de las dos formas y el
+   archivo exportado se puede volver a subir sin editarlo. */
+async function ordProductoId(name) {
+  if (!name) return null;
+  const v = String(name).trim();
+  const exacto = await query(`SELECT Id FROM cat.OP_Producto WHERE Nombre=$1 LIMIT 1`, [v]);
+  if (exacto.rows.length) return exacto.rows[0].id;
+  const porCodigo = await query(
+    `SELECT Id, Nombre FROM cat.OP_Producto
+      WHERE split_part(Nombre, ' — ', 1) = $1 ORDER BY Id`, [v]);
+  if (porCodigo.rows.length === 1) return porCodigo.rows[0].id;
+  if (porCodigo.rows.length > 1) {
+    throw new Error(`El código "${v}" corresponde a más de un producto: `
+      + `${porCodigo.rows.map(r => r.nombre).join(' / ')}. Use el nombre completo.`);
+  }
+  throw new Error(`Producto no encontrado: "${v}"`);
+}
+
 async function ordResolve(body) {
   const out = {};
   for (const f of ORD_FIELDS) {
@@ -610,7 +630,9 @@ async function ordResolve(body) {
     else if (f.type === 'int')     out[f.col] = (v !== undefined && v !== '' && v !== null) ? parseInt(v, 10) : null;
     else if (f.type === 'decimal') out[f.col] = (v !== undefined && v !== '' && v !== null) ? parseFloat(v) : null;
     else if (f.type === 'date')    out[f.col] = v ? v : null;
-    else if (f.type === 'cat')     out[f.col] = await catId(ORD_CAT[f.cat], v);
+    else if (f.type === 'cat')     out[f.col] = f.cat === 'productos'
+                                     ? await ordProductoId(v)
+                                     : await catId(ORD_CAT[f.cat], v);
   }
   return out;
 }

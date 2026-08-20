@@ -312,6 +312,24 @@ La API mantiene su propia validación mínima (`ORD_FIELDS` con `required`: prod
 proveedor), a propósito: la carga masiva de Órdenes por Excel entra por el mismo endpoint y
 endurecerla ahí rechazaría filas que hoy sí se cargan.
 
+## Órdenes: el producto en el grid y en el Excel
+
+`cat.OP_Producto` guarda el producto como **`CODIGO — Descripción`** (un solo catálogo), y el
+formulario lo necesita completo para poder elegirlo de la lista. En cambio el **grid** y el
+**Excel del botón ⬇** muestran **solo el código** —`011-C2002`, no
+`011-C2002 — Conector Clave con Extensión de 18cm`—, porque la descripción ya tiene su propia
+columna al lado y repetirla hacía la columna Código ilegible.
+
+- Lo resuelve `valorVisible(modId, key, val)` con la lista `SOLO_CODIGO`, usada en **tres**
+  lugares: el render del grid, el **filtro** de esa columna (se filtra por lo que se ve) y el
+  armado del Excel. Si mañana otra columna necesita lo mismo, se agrega ahí.
+- El **filtro de la columna Código busca en el código**, no en la descripción. Buscar
+  "Conector" en Código no devuelve nada: para eso está el filtro de Descripción.
+- Como el Excel exportado se puede **volver a importar**, la API acepta las **dos** formas en esa
+  columna: `ordProductoId()` busca primero el nombre completo y, si no lo encuentra, por código
+  (`split_part(Nombre, ' — ', 1)`). Si un código estuviera repetido en dos productos, el error lo
+  dice y pide el nombre completo, en vez de elegir uno al azar.
+
 ## Justificación (Órdenes de Pedido)
 
 Lista desplegable **obligatoria**, después de *Fecha de Vencimiento de EMB* y antes de
