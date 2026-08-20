@@ -139,6 +139,38 @@ no se elige de una lista y no depende del Modelo. Se guarda en la columna de tex
   columnas de texto `Solicitud.Modelo` y `Solicitud.Marca` **no se eliminaron**, que es lo
   que permite volver a texto sin tocar la base.
 
+## Plantilla de Excel con listas desplegables
+
+El botón **⬇ Descargar plantilla** (modal *Subir Excel*) genera un `.xlsx` en el que los campos
+que en el formulario son lista **también son lista desplegable en Excel** (validación de datos),
+en los dos módulos. Así el usuario no tiene que adivinar cómo se escribe cada valor del catálogo,
+que era la causa más común de códigos con error en la bandeja de cargas.
+
+El archivo tiene dos hojas:
+
+- **Plantilla** — la primera, y la única que lee la importación. Solo la fila de encabezados, con
+  el **texto exacto** de las etiquetas del formulario. No se les puede agregar un asterisco ni
+  ninguna marca: `importHeaderMap()` los busca por ese texto.
+- **Listas** — oculta (`veryHidden`), con los valores de los catálogos. Cada lista simple ocupa una
+  columna; los campos dependientes ocupan una columna con todos sus valores más una columna por
+  cada valor del campo padre.
+
+**Línea**, **Familia** y **Grupo Artículo** van **en cascada**: al elegir Departamento, la lista de
+Línea solo trae las líneas de ese departamento, y la de Familia depende de la Línea. La validación
+se arma con `OFFSET`/`MATCH`/`COUNTA` sobre la matriz del padre y **no con nombres definidos**, a
+propósito: los nombres de Excel no admiten espacios ni acentos y los valores de los catálogos sí
+los tienen. Si el padre está vacío o no se encuentra, el `IFERROR` deja la lista completa del campo.
+
+- La validación cubre las filas **2 a `TPL_ROWS`** (hoy **1000**), constante en `frontend/index.html`.
+- Es **bloqueante** (`errorStyle: stop`): Excel no acepta un valor fuera de la lista. Aun así, **pegar
+  filas copiadas salta la validación** — eso Excel no lo puede impedir, así que la API sigue validando
+  los valores al procesar la carga.
+- La cascada usa `OFFSET`, que **Excel de escritorio** resuelve bien pero **Excel en el navegador**
+  puede no resolver. El modal lo advierte.
+- La plantilla se genera con **ExcelJS** (`exceljs.min.js` por CDN) porque **SheetJS en su versión
+  gratuita no puede escribir validaciones de datos**. SheetJS se sigue usando para **leer** el archivo
+  subido y para **exportar** el grid; son dos librerías con dos trabajos distintos.
+
 ## Cargas de Excel (bandeja de códigos)
 
 En **Creación de Códigos**, el Excel ya **no crea los registros de inmediato**: queda como una

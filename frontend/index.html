@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nutricare · Portal de Registros</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- ExcelJS solo para GENERAR la plantilla: SheetJS (arriba) no puede escribir
+     validaciones de datos, que es lo que hace las listas desplegables del Excel.
+     Leer el archivo subido y exportar el grid siguen siendo de SheetJS. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 
@@ -489,6 +493,7 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
       <div id="importIntro">
         <p style="margin-top:0">El archivo debe tener los <b>mismos encabezados de columna</b> que la descarga a Excel (primera fila). Las columnas que no coincidan se ignoran.</p>
         <p>Los valores de las listas (Departamento, Proveedor, etc.) <b>deben existir en los catálogos</b>; si no, esa fila se marcará con error y podrás corregirla. Descarga la plantilla para partir del formato correcto.</p>
+        <p>La plantilla trae esos campos como <b>listas desplegables</b>, y las de <b>Línea, Familia y Grupo Artículo</b> se filtran según el Departamento o la Línea que elijas. Ábrela en <b>Excel de escritorio</b>: en Excel del navegador las listas en cascada pueden no funcionar.</p>
         <p>En <b>Creación de Códigos</b> el archivo no crea los registros de inmediato: queda en <b>Cargas de Excel</b> como pendiente, donde se revisan los códigos y se registran los que se marquen.</p>
       </div>
       <div id="importProgress" class="hidden" style="text-align:center;padding:16px">
@@ -1684,13 +1689,134 @@ function openImport(){
   document.getElementById('importModal').classList.remove('hidden');
 }
 function closeImport(){ document.getElementById('importModal').classList.add('hidden'); document.getElementById('importFile').value=""; }
-function downloadTemplate(){
-  if(typeof XLSX==="undefined"){ toast("No se pudo cargar la librería de Excel"); return; }
-  const headers=allFields().map(f=>f.label);
-  const ws=XLSX.utils.aoa_to_sheet([headers]);
-  ws['!cols']=headers.map(h=>({wch:Math.min(Math.max(h.length+2,12),40)}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Plantilla");
-  XLSX.writeFile(wb, `Plantilla_${M().title.replace(/[^A-Za-z0-9]+/g,'_')}.xlsx`);
+/* ---------------------------------------------------------------------------
+   PLANTILLA DE EXCEL CON LISTAS DESPLEGABLES
+
+   Los campos que en el formulario son lista salen en el Excel como lista
+   desplegable (validación de datos de Excel), para que el usuario no tenga que
+   adivinar cómo se escribe cada valor del catálogo.
+
+   Cómo está armado el archivo:
+   - Hoja "Plantilla" (la primera, la que lee la importación): solo encabezados,
+     con el texto EXACTO de las etiquetas del formulario. No se les puede agregar
+     un asterisco ni nada: importHeaderMap() los busca por ese texto.
+   - Hoja "Listas" (oculta): los valores de los catálogos. Cada lista simple
+     ocupa una columna. Cada campo dependiente ocupa una columna con todos sus
+     valores (respaldo) más una columna por cada valor del campo padre.
+   - Las validaciones se aplican al rango de filas 2..TPL_ROWS de cada columna.
+
+   Los campos dependientes (Línea, Familia, Grupo Artículo) van EN CASCADA: la
+   lista se arma con OFFSET/MATCH/COUNTA sobre la matriz del padre, así que al
+   elegir Departamento la lista de Línea solo trae las líneas de ese
+   departamento. Se usan fórmulas y no nombres definidos a propósito: los
+   nombres de Excel no admiten espacios ni acentos y los valores de los
+   catálogos sí los tienen. Si el padre está vacío o no se encuentra, el
+   IFERROR deja la lista completa del campo.
+
+   Ojo: la cascada depende de OFFSET, que Excel de escritorio resuelve bien pero
+   Excel en el navegador puede no resolver. Y pegar filas copiadas siempre salta
+   la validación — eso Excel no lo puede impedir. Por eso la API sigue validando
+   los valores al procesar la carga.
+   --------------------------------------------------------------------------- */
+const TPL_ROWS = 1000;                 // filas de la plantilla que llevan validación
+
+function colLetter(n){ let s=""; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; }
+function tplUniq(arr){
+  return Array.from(new Set((arr||[]).filter(v=>v!==null&&v!==undefined&&String(v).trim()!=="")))
+              .sort((a,b)=>String(a).localeCompare(String(b),'es'));
+}
+
+async function downloadTemplate(){
+  if(typeof ExcelJS==="undefined"){ toast("No se pudo cargar la librería de Excel"); return; }
+  const m=M();
+  // Se puede llegar aquí sin haber pasado por el módulo (p. ej. desde Cargas):
+  // sin catálogos cargados la plantilla saldría sin listas.
+  if(!m.lists || !Object.keys(m.lists).length){
+    toast("Preparando plantilla…");
+    try{ await loadCatalogsFor(ACT); }
+    catch(e){ toast("No se pudieron cargar los catálogos: "+e.message); return; }
+  }
+  const fields=allFieldsOf(m), lists=m.lists||{}, hier=m.hier||{};
+
+  const wb=new ExcelJS.Workbook();
+  wb.creator="Nutricare · Portal de Registros";
+  const ws=wb.addWorksheet("Plantilla");
+  const wl=wb.addWorksheet("Listas"); wl.state='veryHidden';
+
+  // --- Encabezados ---
+  const headers=fields.map(f=>f.label);
+  ws.addRow(headers);
+  const head=ws.getRow(1);
+  head.font={bold:true, color:{argb:'FFFFFFFF'}, size:11};
+  head.fill={type:'pattern', pattern:'solid', fgColor:{argb:'FF0A5C8A'}};
+  head.alignment={vertical:'middle', wrapText:true};
+  head.height=30;
+  ws.views=[{state:'frozen', ySplit:1}];
+  headers.forEach((h,i)=>{ ws.getColumn(i+1).width=Math.min(Math.max(h.length+2,14),42); });
+
+  // --- Hoja Listas ---
+  let col=0;
+  const escribir=(c,valores)=>{ valores.forEach((v,i)=>{ wl.getCell(i+2,c).value=v; }); };
+
+  const simples={};                                  // clave de lista -> {c, n}
+  fields.filter(f=>f.type==='list' && f.list).forEach(f=>{
+    if(simples[f.list]) return;                      // unidades la usan 3 campos: una sola columna
+    const vals=tplUniq(lists[f.list]);
+    col++; wl.getCell(1,col).value=f.list; escribir(col,vals);
+    simples[f.list]={c:col, n:vals.length};
+  });
+
+  const deps={};                                     // clave de campo -> matriz del padre
+  fields.filter(f=>f.type==='dependent' && hier[f.key]).forEach(f=>{
+    const map=hier[f.key].map||{};
+    const padres=Object.keys(map).filter(p=>Array.isArray(map[p]) && map[p].length);
+    const todos=tplUniq(padres.flatMap(p=>map[p]).concat(lists[f.key]||[]));
+    col++; const colTodos=col; wl.getCell(1,col).value=f.key+'__todos'; escribir(colTodos,todos);
+    const primera=col+1; let alto=0;
+    padres.forEach(p=>{
+      col++; wl.getCell(1,col).value=p;
+      const vals=tplUniq(map[p]); escribir(col,vals);
+      if(vals.length>alto) alto=vals.length;
+    });
+    deps[f.key]={todos:{c:colTodos, n:todos.length}, primera, ultima:col, alto, sinPadres:padres.length===0};
+  });
+
+  // --- Validaciones ---
+  const colDe={}; fields.forEach((f,i)=>{ colDe[f.key]=colLetter(i+1); });
+  const validar=(letra,formula,etiqueta)=>{
+    ws.dataValidations.add(`${letra}2:${letra}${TPL_ROWS}`, {
+      type:'list', allowBlank:true, formulae:[formula],
+      showErrorMessage:true, errorStyle:'stop',
+      errorTitle:'Valor no permitido',
+      error:`Elija un valor de la lista de ${etiqueta}. Si el que necesita no aparece, agréguelo primero en Catálogos.`
+    });
+  };
+
+  fields.forEach(f=>{
+    if(f.type==='list' && simples[f.list] && simples[f.list].n){
+      const L=colLetter(simples[f.list].c);
+      validar(colDe[f.key], `Listas!$${L}$2:$${L}$${simples[f.list].n+1}`, f.label);
+      return;
+    }
+    if(f.type==='dependent' && deps[f.key]){
+      const d=deps[f.key], P=colDe[hier[f.key].parent], T=colLetter(d.todos.c);
+      const respaldo = d.todos.n ? `Listas!$${T}$2:$${T}$${d.todos.n+1}` : `Listas!$${T}$2`;
+      if(d.sinPadres || !P){ validar(colDe[f.key], respaldo, f.label); return; }
+      const A=colLetter(d.primera), B=colLetter(d.ultima), ult=d.alto+1;
+      const pos   = `MATCH($${P}2,Listas!$${A}$1:$${B}$1,0)`;
+      const cuantos = `COUNTA(INDEX(Listas!$${A}$2:$${B}$${ult},0,${pos}))`;
+      const rango = `OFFSET(Listas!$${A}$2,0,${pos}-1,${cuantos},1)`;
+      validar(colDe[f.key], `IFERROR(${rango},${respaldo})`, f.label);
+    }
+  });
+
+  const buf=await wb.xlsx.writeBuffer();
+  const url=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  const a=document.createElement('a');
+  a.href=url; a.download=`Plantilla_${m.title.replace(/[^A-Za-z0-9]+/g,'_')}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast("Plantilla descargada");
 }
 function setImportProgress(done,total){ document.getElementById('importProgTxt').textContent=`Procesando ${done} de ${total} registro(s)…`; }
 async function runImport(rows){
