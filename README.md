@@ -151,22 +151,32 @@ El archivo tiene dos hojas:
 - **Plantilla** — la primera, y la única que lee la importación. Solo la fila de encabezados, con
   el **texto exacto** de las etiquetas del formulario. No se les puede agregar un asterisco ni
   ninguna marca: `importHeaderMap()` los busca por ese texto.
-- **Listas** — oculta (`veryHidden`), con los valores de los catálogos. Cada lista simple ocupa una
-  columna; los campos dependientes ocupan una columna con todos sus valores más una columna por
-  cada valor del campo padre.
+- **Listas** — oculta (`veryHidden`), con los valores de los catálogos: **una columna por lista**.
+  `Unidad de Inventario`, `Unidad de Compra` y `Unidad de Venta` comparten la columna de `unidades`.
 
-**Línea**, **Familia** y **Grupo Artículo** van **en cascada**: al elegir Departamento, la lista de
-Línea solo trae las líneas de ese departamento, y la de Familia depende de la Línea. La validación
-se arma con `OFFSET`/`MATCH`/`COUNTA` sobre la matriz del padre y **no con nombres definidos**, a
-propósito: los nombres de Excel no admiten espacios ni acentos y los valores de los catálogos sí
-los tienen. Si el padre está vacío o no se encuentra, el `IFERROR` deja la lista completa del campo.
+**Todas** las validaciones son una **referencia simple a un rango** (`Listas!$D$2:$D$40`). No hay
+fórmulas, y esto es a propósito.
+
+### Por qué Línea/Familia/Grupo Artículo no van en cascada
+
+Se intentó: la lista del hijo se armaba con `IFERROR(OFFSET(…MATCH…COUNTA…))` sobre una matriz con
+una columna por cada valor del padre. **Excel de escritorio rechaza esa fórmula** — la lista de una
+validación tiene que resolver a una *referencia*, e `IFERROR` devuelve un valor, no una referencia.
+Y el daño no se queda ahí: al encontrar una validación inválida, Excel **descarta esa y todas las
+que vienen después en el archivo**. En la práctica se veía el desplegable solo en Departamento
+(la única validación anterior a la cascada) y lo perdían Línea, Familia, Grupo Artículo, Centro de
+Costo y todos los campos siguientes.
+
+Por eso los campos dependientes traen la **lista completa** de sus valores: todas las líneas, todas
+las familias, todos los grupos. La coherencia padre/hijo la valida la **API al procesar la carga**,
+que además es la única defensa real (ver el punto de pegar filas, abajo).
 
 - La validación cubre las filas **2 a `TPL_ROWS`** (hoy **1000**), constante en `frontend/index.html`.
 - Es **bloqueante** (`errorStyle: stop`): Excel no acepta un valor fuera de la lista. Aun así, **pegar
   filas copiadas salta la validación** — eso Excel no lo puede impedir, así que la API sigue validando
   los valores al procesar la carga.
-- La cascada usa `OFFSET`, que **Excel de escritorio** resuelve bien pero **Excel en el navegador**
-  puede no resolver. El modal lo advierte.
+- Al ser referencias simples, los desplegables funcionan igual en **Excel de escritorio**, **Excel en
+  el navegador** y **WPS**.
 - La plantilla se genera con **ExcelJS** (`exceljs.min.js` por CDN) porque **SheetJS en su versión
   gratuita no puede escribir validaciones de datos**. SheetJS se sigue usando para **leer** el archivo
   subido y para **exportar** el grid; son dos librerías con dos trabajos distintos.
