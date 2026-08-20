@@ -171,6 +171,28 @@ Por eso los campos dependientes traen la **lista completa** de sus valores: toda
 las familias, todos los grupos. La coherencia padre/hijo la valida la **API al procesar la carga**,
 que además es la única defensa real (ver el punto de pegar filas, abajo).
 
+### Órdenes: Unidades x Caja y Total de Unidades calculados
+
+En la plantilla de **Órdenes de Pedido** esas dos columnas no se digitan, igual que en el
+formulario: van como **fórmula de Excel** y la hoja se entrega **protegida** para que no se pisen.
+
+- **Unidades x Caja** — `IFERROR(VLOOKUP($A2, <tabla de conversiones>, 2, FALSE), "")`. La hoja
+  `Listas` lleva un bloque *producto → unidades por caja* con **solo los productos que tienen
+  conversión registrada**, así que para el resto el `VLOOKUP` falla y la celda queda **vacía** —
+  el mismo resultado que en el formulario, que remite a **Conversiones**.
+- **Total de Unidades** — `IF(N($C2)*N($D2)=0,"",N($C2)*N($D2))`. El `N()` vuelve `0` el `""` que
+  dejan las fórmulas vacías, así que sin Cajas o sin conversión el total queda vacío en vez de
+  mostrar `0`.
+- La **protección va sin contraseña**: se desprotege desde *Revisar → Desproteger hoja* si hace
+  falta un ajuste manual. Con la hoja protegida, **pegar un bloque que pise esas dos columnas
+  queda rechazado** por Excel — que es justamente lo que evita perder las fórmulas.
+- El libro se guarda con `fullCalcOnLoad`, así que Excel recalcula al abrir.
+
+Como las fórmulas llegan hasta la fila `TPL_ROWS`, SheetJS devuelve ~999 filas al leer el archivo
+subido (todas con el `""` de las fórmulas). `onImportFile()` **recorta las filas vacías del final**
+antes de importar; si no, el contador decía *"Procesando 1 de 999"* y el resumen reportaba
+cientos de filas vacías.
+
 - La validación cubre las filas **2 a `TPL_ROWS`** (hoy **1000**), constante en `frontend/index.html`.
 - Es **bloqueante** (`errorStyle: stop`): Excel no acepta un valor fuera de la lista. Aun así, **pegar
   filas copiadas salta la validación** — eso Excel no lo puede impedir, así que la API sigue validando

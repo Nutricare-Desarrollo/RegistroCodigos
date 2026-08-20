@@ -496,6 +496,7 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
         <p style="margin-top:0">El archivo debe tener los <b>mismos encabezados de columna</b> que la descarga a Excel (primera fila). Las columnas que no coincidan se ignoran.</p>
         <p>Los valores de las listas (Departamento, Proveedor, etc.) <b>deben existir en los catálogos</b>; si no, esa fila se marcará con error y podrás corregirla. Descarga la plantilla para partir del formato correcto.</p>
         <p>La plantilla trae esos campos como <b>listas desplegables</b> con todos los valores del catálogo. <b>Línea, Familia</b> y <b>Grupo Artículo</b> muestran la lista completa, no solo la del Departamento: revisa que la combinación sea la correcta, porque eso se valida al procesar la carga.</p>
+        <p id="importCalcNote" class="hidden"><b>Unidades x Caja</b> y <b>Total de Unidades</b> vienen calculados: la primera la trae Conversiones según el producto y el total es <b>Cajas × Unidades x Caja</b>. Esas dos columnas están bloqueadas — si el producto no tiene conversión quedan vacías y hay que registrarla en <b>Conversiones</b>. Para un ajuste manual, desprotegé la hoja en <b>Revisar → Desproteger hoja</b> (sin contraseña).</p>
         <p>En <b>Creación de Códigos</b> el archivo no crea los registros de inmediato: queda en <b>Cargas de Excel</b> como pendiente, donde se revisan los códigos y se registran los que se marquen.</p>
       </div>
       <div id="importProgress" class="hidden" style="text-align:center;padding:16px">
@@ -1682,6 +1683,7 @@ function buildImportPayload(row, headerMap){
 function openImport(){
   document.getElementById('importTitle').textContent="Subir Excel · "+M().title;
   document.getElementById('importIntro').classList.remove('hidden');
+  document.getElementById('importCalcNote').classList.toggle('hidden', ACT!=='ordenes');
   document.getElementById('importProgress').classList.add('hidden');
   document.getElementById('importResults').classList.add('hidden');
   document.getElementById('importResults').innerHTML="";
@@ -1798,6 +1800,61 @@ async function downloadTemplate(){
     });
   });
 
+  // --- Columnas calculadas (Órdenes): la misma conversión del formulario ---
+  // Unidades x Caja la trae Conversiones según el producto, y
+  // Total de Unidades = Cajas × Unidades x Caja. Van como fórmula de Excel para
+  // que el usuario vea el total mientras llena, sin tener que multiplicar a mano.
+  const bloqueadas=[];
+  if(ACT==='ordenes'){
+    const colDe={}; fields.forEach((f,i)=>{ colDe[f.key]=colLetter(i+1); });
+    const conv=m.conv||{};
+    // Tabla producto -> unidades por caja, solo con los que TIENEN conversión:
+    // así el VLOOKUP falla (y deja la celda vacía) para los que no la tienen,
+    // igual que el formulario, que avisa que hay que registrarla.
+    const pares=(lists.productos||[])
+      .map(p=>[p, Number(conv[codeFromProducto(p)])])
+      .filter(([,u])=>Number.isFinite(u) && u>0);
+    let refConv=null;
+    if(pares.length){
+      const cp=++col; wl.getCell(1,cp).value='conv_producto';
+      const cu=++col; wl.getCell(1,cu).value='conv_unidades_caja';
+      pares.forEach(([p,u],i)=>{ wl.getCell(i+2,cp).value=p; wl.getCell(i+2,cu).value=u; });
+      refConv=`Listas!$${colLetter(cp)}$2:$${colLetter(cu)}$${pares.length+1}`;
+    }
+    const A=colDe.codigo_producto, C=colDe.cajas, D=colDe.unidades_caja, E=colDe.total_unidades;
+    for(let r=2;r<=TPL_ROWS;r++){
+      if(refConv){
+        const c=ws.getCell(`${D}${r}`);
+        c.value={formula:`IFERROR(VLOOKUP($${A}${r},${refConv},2,FALSE),"")`};
+        c.protection={locked:true};
+      }
+      const t=ws.getCell(`${E}${r}`);
+      // N() vuelve 0 el "" que dejan las fórmulas vacías, así que sin Cajas o
+      // sin conversión el total queda vacío en vez de mostrar 0.
+      t.value={formula:`IF(N($${C}${r})*N($${D}${r})=0,"",N($${C}${r})*N($${D}${r}))`};
+      t.protection={locked:true};
+    }
+    bloqueadas.push(E); if(refConv) bloqueadas.push(D);
+  }
+
+  // --- Protección: solo se escriben las columnas de captura ---
+  // Sin contraseña: se puede desproteger desde Revisar → Desproteger hoja si
+  // hace falta un ajuste manual. Ojo: con la hoja protegida, pegar un bloque
+  // que pise las columnas calculadas queda rechazado por Excel.
+  if(bloqueadas.length){
+    fields.forEach((f,i)=>{
+      ws.getColumn(i+1).protection={locked: bloqueadas.includes(colLetter(i+1))};
+    });
+    ws.getRow(1).eachCell(c=>{ c.protection={locked:true}; });   // encabezados: los lee la importación
+    wb.calcProperties.fullCalcOnLoad=true;
+    await ws.protect(undefined,{
+      selectLockedCells:true, selectUnlockedCells:true,
+      formatCells:false, formatColumns:false, formatRows:false,
+      insertRows:false, insertColumns:false, deleteRows:false, deleteColumns:false,
+      sort:false, autoFilter:false, pivotTables:false
+    });
+  }
+
   const buf=await wb.xlsx.writeBuffer();
   const url=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
   const a=document.createElement('a');
@@ -1829,6 +1886,12 @@ async function onImportFile(input){
     const wb=XLSX.read(new Uint8Array(buf), {type:'array', cellDates:true});
     const ws=wb.Sheets[wb.SheetNames[0]];
     rows=XLSX.utils.sheet_to_json(ws, {defval:''});
+    // La plantilla de Órdenes trae fórmulas hasta la fila TPL_ROWS, así que
+    // SheetJS devuelve cientos de filas al final que solo tienen el "" de esas
+    // fórmulas. Se recortan para que el contador y el resumen hablen de las
+    // filas que el usuario realmente llenó.
+    const vacia=r=>Object.values(r).every(v=>v===null||v===undefined||String(v).trim()==='');
+    while(rows.length && vacia(rows[rows.length-1])) rows.pop();
   }catch(e){ toast("Error al leer el archivo: "+e.message); input.value=""; return; }
   input.value="";
   if(!rows.length){ toast("El archivo no tiene filas de datos"); return; }
