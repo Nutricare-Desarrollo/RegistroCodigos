@@ -763,6 +763,8 @@ async function loadCatalogsFor(id){
   if(id==='codigos'){
     m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable,modelos:c.modelos||[]};
     m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}};
+    // Grupo Artículo -> Centro de Costo (cat.GrupoArticulo.CentroCostoId, migración V3).
+    m.grupoCentro=c.grupo_centro||{};
   } else {
     m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector,justificaciones:c.justificaciones||[]};
     m.hier={};
@@ -1034,6 +1036,11 @@ function buildForm(rec, readOnly){
       else if(f.type==="dependent") wrap.appendChild(dependentSelect(f,rec));
       else if(f.type==="textarea"){ const t=document.createElement('textarea');t.rows=3;t.id="fld_"+f.key;t.value=val;wrap.appendChild(t); }
       else { const i=document.createElement('input'); i.type=f.type==="number"?"number":f.type==="date"?"date":"text"; i.id="fld_"+f.key; i.value=val; if(f.ph) i.placeholder=f.ph; if(f.max) i.maxLength=f.max; wrap.appendChild(i); }
+      // Aviso de coherencia del Centro de Costo con el Grupo Artículo (ver syncCentroCosto).
+      if(ACT==='codigos' && f.key==='centro_costo'){
+        const av=document.createElement('small'); av.className='campo-aviso'; av.id='avisoCentroCosto';
+        wrap.appendChild(av);
+      }
       c.appendChild(wrap);
     });
   });
@@ -1416,15 +1423,65 @@ function dependentSelect(f,rec){
 /* Códigos: al cambiar Departamento, Línea, Familia o Grupo Artículo se limpia el
    Centro de Costo, para que el usuario lo vuelva a elegir a conciencia y no quede
    un centro que ya no corresponde a la nueva clasificación contable. */
+/* CENTRO DE COSTO
+   La relación real vive en cat.GrupoArticulo: cada Grupo Artículo apunta a un
+   Departamento Y a un Centro de Costo (migración V3). NO cuelga del
+   Departamento: 'CO.EQ._ESPECIALIDADES_QUIRÚRGICAS' tiene dos grupos con
+   centros distintos (…200202 y …200203), así que desde el departamento solo no
+   se puede saber cuál va.
+
+   Por eso el Centro de Costo lo determina el GRUPO ARTÍCULO. La API ya mandaba
+   ese mapa en /api/catalogos como `grupo_centro` y el frontend no lo leía: el
+   campo era una lista completa que solo se vaciaba al cambiar la clasificación
+   contable, y el usuario tenía que acertar a mano.
+
+   Queda editable a propósito (puede haber excepciones), pero si el valor no es
+   el que corresponde al grupo se avisa debajo del campo. */
 const CAMPOS_LIMPIAN_CENTRO = ['departamento','linea','familia','grupo_articulo'];
+function centroDeGrupo(grupo){
+  const mapa=(M().grupoCentro)||{};
+  return mapa[String(grupo||'').trim()] || '';
+}
+function ccSetValor(v){
+  const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
+  if(cc._combo) cc._combo.setValue(v||''); else cc.value=v||'';
+}
+function ccAviso(txt){
+  const av=document.getElementById('avisoCentroCosto');
+  if(av) av.textContent=txt||'';
+}
+/* Aplica el centro que corresponde al grupo. `pisar`=true cuando el cambio lo
+   disparó el usuario (hay que reemplazar el valor); false al abrir el
+   formulario, donde el valor guardado se respeta y solo se avisa. */
+function syncCentroCosto(pisar){
+  const g=(document.getElementById('fld_grupo_articulo')||{}).value||'';
+  const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
+  const esperado=centroDeGrupo(g);
+  const actual=String(cc.value||'').trim();
+  if(pisar){
+    ccSetValor(esperado);                       // sin grupo o sin relación: queda vacío
+    ccAviso(g && !esperado
+      ? `«${g}» no tiene centro de costo asignado en Catálogos. Elíjalo a mano.` : '');
+    return;
+  }
+  if(esperado && actual && actual!==esperado){
+    ccAviso(`Al Grupo Artículo «${g}» le corresponde «${esperado}».`);
+  } else if(esperado && !actual){
+    ccSetValor(esperado); ccAviso('');
+  } else ccAviso('');
+}
 function wireCentroCosto(){
   const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
   CAMPOS_LIMPIAN_CENTRO.forEach(k=>{
     const el=document.getElementById('fld_'+k); if(!el) return;
-    el.addEventListener('change', ()=>{
-      if(cc._combo) cc._combo.setValue(""); else cc.value="";
-    });
+    // Diferido: al cambiar Departamento/Línea/Familia, dependentSelect limpia
+    // Grupo Artículo en su propio listener. Sin el setTimeout se leería el
+    // grupo anterior y se pondría un centro que ya no corresponde.
+    el.addEventListener('change', ()=>setTimeout(()=>syncCentroCosto(true),0));
   });
+  // Si el usuario cambia el centro a mano, se revisa la coherencia.
+  cc.addEventListener('change', ()=>syncCentroCosto(false));
+  setTimeout(()=>syncCentroCosto(false),0);     // al abrir: respeta lo guardado y avisa
 }
 
 /* Marca en rojo los obligatorios que faltan y lleva al primero. Con 26 campos
@@ -2376,6 +2433,20 @@ function cargaCodSyncDeps(){
       av.textContent=`«${padre}» no está en el catálogo, así que no se puede comprobar la ${f.label.toLowerCase()}.`;
     } else av.textContent='';
   });
+  // Centro de Costo: no es dependiente, pero lo determina el Grupo Artículo
+  // (cat.GrupoArticulo.CentroCostoId). Acá solo se avisa — el modal acepta
+  // texto libre porque lo que se corrige viene de un Excel.
+  const gEl=document.getElementById('cfld_grupo_articulo');
+  const cEl=document.getElementById('cfld_centro_costo');
+  const cAv=document.getElementById('cavi_centro_costo');
+  if(gEl && cEl && cAv){
+    const g=String(gEl.value||'').trim(), c=String(cEl.value||'').trim();
+    const esperado=((m.grupoCentro)||{})[g]||'';
+    const malo=!!(g && esperado && c && c!==esperado);
+    cEl.classList.toggle('campo-falta', malo);
+    cAv.textContent = malo ? `Al Grupo Artículo «${g}» le corresponde «${esperado}».`
+      : (g && esperado && !c ? `Al Grupo Artículo «${g}» le corresponde «${esperado}».` : '');
+  }
 }
 function cargaCodEditar(detId){
   const row=CARGA_COD.find(r=>r.id===detId); if(!row) return;
@@ -2410,7 +2481,7 @@ function cargaCodEditar(detId){
       }
       el.id='cfld_'+f.key; el.value=val; el.disabled=ro;
       wrap.appendChild(el);
-      if(f.type==='dependent'){
+      if(f.type==='dependent' || f.key==='centro_costo'){
         const av=document.createElement('small');
         av.className='campo-aviso'; av.id='cavi_'+f.key;
         wrap.appendChild(av);
@@ -2423,6 +2494,7 @@ function cargaCodEditar(detId){
     const claves=new Set();
     allFieldsOf(codModule()).filter(f=>f.type==='dependent' && (codModule().hier||{})[f.key])
       .forEach(f=>{ claves.add(f.key); claves.add(codModule().hier[f.key].parent); });
+    claves.add('grupo_articulo'); claves.add('centro_costo');
     claves.forEach(k=>{
       const e=document.getElementById('cfld_'+k); if(!e) return;
       e.addEventListener('input', cargaCodSyncDeps);

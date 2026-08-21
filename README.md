@@ -369,9 +369,32 @@ Excel: las tres cosas salen solas de declarar el campo con `type:"list"` en
 
 ## Centro de Costo
 
-En Códigos, cambiar **Departamento**, **Línea**, **Familia** o **Grupo Artículo** **limpia** el
-Centro de Costo, para que no quede un centro que ya no corresponde a la nueva clasificación
-contable. El usuario lo vuelve a elegir a mano.
+La relación real vive en **`cat.GrupoArticulo`**: cada Grupo Artículo apunta a un **Departamento**
+*y* a un **Centro de Costo** (columnas `DepartamentoId` y `CentroCostoId`, migración **`V3`**).
+`cat.CentroCosto` es un catálogo plano, sin padre.
+
+**No cuelga del Departamento**, y no puede: `CO.EQ._ESPECIALIDADES_QUIRÚRGICAS` tiene dos grupos
+con centros distintos —*Terapias Quirúrgicas* → `20-2002-200202` y *Ortopédia* → `20-2002-200203`—
+así que desde el departamento solo no se sabe cuál va. Las siete relaciones cargadas por `V3`
+coinciden exactamente con el Excel *Relaciones Codigos.xlsx*; **no hace falta migración nueva**.
+
+En el formulario de Códigos, el **Grupo Artículo determina el Centro de Costo**:
+
+- Al elegir Grupo Artículo, el Centro de Costo se llena con el que le corresponde (mapa
+  `grupo_centro` de `/api/catalogos`, que la API ya enviaba y el frontend **no leía**).
+- Al cambiar Departamento, Línea o Familia se limpia el Grupo Artículo y con él el Centro de
+  Costo. El recálculo va **diferido** (`setTimeout`) porque `dependentSelect` limpia el grupo en
+  su propio listener: sin eso se leería el grupo anterior.
+- **Queda editable**, por si hay excepciones, pero si el valor no es el que corresponde al grupo
+  se avisa debajo del campo: *"Al Grupo Artículo «Ortopédia» le corresponde «20-2002-200203»"*.
+  Al **editar** un registro viejo se respeta lo guardado y solo se avisa.
+- Si el grupo no tiene centro asignado en el catálogo, el campo queda vacío y lo dice.
+- El modal de un código de la **bandeja de cargas** muestra el mismo aviso.
+
+La API sigue aceptando cualquier centro del catálogo (`type:'cat'`), a propósito: endurecerlo
+rechazaría los registros históricos al editarlos y las filas de Excel que hoy sí entran.
+
+
 
 ## Seguridad
 - Las credenciales de PostgreSQL y el secret de Entra ID viven **solo** en las App
