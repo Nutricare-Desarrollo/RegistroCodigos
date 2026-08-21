@@ -474,6 +474,40 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
   </div>
 </div>
 
+<!-- ===== MODAL: centros de costo por Grupo Artículo (relación, migración V9) ===== -->
+<div id="gcModal" class="overlay hidden">
+  <div class="modal wide">
+    <div class="modal-head"><h3 id="gcTitle">Centro de Costo por Grupo Artículo</h3><button class="x" onclick="gcClose()">×</button></div>
+    <div class="modal-body">
+      <!-- Vista 1: todos los grupos con sus centros -->
+      <div id="gcLista">
+        <div class="opt-toolbar"><h4>Cada Grupo Artículo determina los Centros de Costo que ofrece el formulario</h4></div>
+        <div class="tbl-wrap card" style="box-shadow:none;border:1px solid var(--line)">
+          <table><thead><tr><th>Grupo Artículo</th><th>Centros de Costo</th><th style="width:120px;text-align:right">Acciones</th></tr></thead>
+          <tbody id="gcBody"></tbody></table>
+        </div>
+      </div>
+      <!-- Vista 2: los centros de un grupo -->
+      <div id="gcDetalle" class="hidden">
+        <div class="opt-toolbar">
+          <button class="btn-ghost" onclick="gcVolver()">← Volver a los grupos</button>
+        </div>
+        <h4 id="gcDetTitulo" style="margin:4px 0 10px"></h4>
+        <div class="tbl-wrap card" style="box-shadow:none;border:1px solid var(--line)">
+          <table><thead><tr><th>Centro de Costo</th><th style="width:120px;text-align:right">Acciones</th></tr></thead>
+          <tbody id="gcDetBody"></tbody></table>
+        </div>
+        <div id="gcAgregar" style="display:flex;gap:8px;align-items:center;margin-top:12px">
+          <select id="gcSelect" style="flex:1"></select>
+          <button class="btn-primary" onclick="gcAgregarCentro()">Ligar al grupo</button>
+        </div>
+        <p id="gcDetNota" class="sub" style="margin:10px 0 0"></p>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn-ghost" onclick="gcClose()">Cerrar</button></div>
+  </div>
+</div>
+
 <!-- ===== MODAL: agregar/editar opción ===== -->
 <div id="optEditModal" class="overlay hidden">
   <div class="modal sm">
@@ -763,8 +797,11 @@ async function loadCatalogsFor(id){
   if(id==='codigos'){
     m.lists={departamentos:c.departamentos,grupo_articulo:c.grupo_articulo,centro_costo:c.centro_costo,lote:c.lote,unidades:c.unidades,empaque:c.empaque,proveedores:c.proveedores,origen:c.origen,tipo_implante:c.tipo_implante,es_implantable:c.es_implantable,modelos:c.modelos||[]};
     m.hier={linea:{parent:"departamento", map:c.dept_lines||{}}, familia:{parent:"linea", map:c.familias||{}}, grupo_articulo:{parent:"departamento", map:c.grupo_by_dept||{}}};
-    // Grupo Artículo -> Centro de Costo (cat.GrupoArticulo.CentroCostoId, migración V3).
-    m.grupoCentro=c.grupo_centro||{};
+    // Grupo Artículo -> Centros de Costo (cat.GrupoArticuloCentroCosto, migración V9).
+    // Un grupo puede tener VARIOS centros. `grupo_centro` (un solo valor por grupo)
+    // es la forma vieja del mapa: se acepta para que el frontend siga funcionando
+    // contra una API sin desplegar todavía.
+    m.grupoCentros=normalizarGrupoCentros(c.grupo_centros || c.grupo_centro);
   } else {
     m.lists={productos:c.productos,bodegas:c.bodegas,proveedores:c.proveedores,transporte:c.transporte,sector:c.sector,justificaciones:c.justificaciones||[]};
     m.hier={};
@@ -1266,7 +1303,15 @@ function makeCombo(id, options, val, cfg){
     // superior), hay que redibujarlo: si no, quedaría mostrando las opciones viejas.
     setOptions(o){ curOptions=(o||[]).slice(); if(!panel.classList.contains('hidden')) renderPanel(search.value); },
     getValue(){ return hidden.value; },
-    setValue(v){ hidden.value=v||""; search.value=v||""; }
+    setValue(v){ hidden.value=v||""; search.value=v||""; },
+    // Bloquea el combo (lo usa Centro de Costo cuando el Grupo Artículo deja una
+    // sola opción). Al deshabilitar se cierra el panel: si quedaba abierto, el
+    // usuario podía seguir eligiendo de una lista que ya no debía tocar.
+    setDisabled(b, ph){
+      search.disabled=!!b;
+      if(ph!=null) search.placeholder=ph;
+      if(b) close();
+    }
   };
   hidden._combo=ctrl;
   return ctrl;
@@ -1301,7 +1346,16 @@ function comboWithPlus(f,val){
   }
   if(canManageCat()){
     const plus=document.createElement('button'); plus.className="btn-plus"; plus.type="button"; plus.textContent="＋";
-    plus.title="Gestionar opciones de "+f.label; plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
+    // Centro de Costo no se elige del catálogo completo: lo determina el Grupo
+    // Artículo. Su ＋ lleva a ligar centros a ese grupo, que es lo que de verdad
+    // cambia la lista. El catálogo plano sigue en Catálogos → Centro de Costo.
+    if(ACT==='codigos' && f.key==='centro_costo'){
+      plus.title="Centros de Costo del Grupo Artículo";
+      plus.onclick=()=>gcAbrirDesdeFormulario();
+    } else {
+      plus.title="Gestionar opciones de "+f.label;
+      plus.onclick=()=>openOpt(f.list,f.label,"fld_"+f.key);
+    }
     row.appendChild(plus);
   }
   return row;
@@ -1420,28 +1474,44 @@ function dependentSelect(f,rec){
   return row;
 }
 
-/* Códigos: al cambiar Departamento, Línea, Familia o Grupo Artículo se limpia el
-   Centro de Costo, para que el usuario lo vuelva a elegir a conciencia y no quede
-   un centro que ya no corresponde a la nueva clasificación contable. */
 /* CENTRO DE COSTO
-   La relación real vive en cat.GrupoArticulo: cada Grupo Artículo apunta a un
-   Departamento Y a un Centro de Costo (migración V3). NO cuelga del
+   La relación vive en cat.GrupoArticuloCentroCosto (migración V9): un Grupo
+   Artículo puede tener UNO o VARIOS centros de costo. NO cuelga del
    Departamento: 'CO.EQ._ESPECIALIDADES_QUIRÚRGICAS' tiene dos grupos con
    centros distintos (…200202 y …200203), así que desde el departamento solo no
    se puede saber cuál va.
 
-   Por eso el Centro de Costo lo determina el GRUPO ARTÍCULO. La API ya mandaba
-   ese mapa en /api/catalogos como `grupo_centro` y el frontend no lo leía: el
-   campo era una lista completa que solo se vaciaba al cambiar la clasificación
-   contable, y el usuario tenía que acertar a mano.
+   Por eso el Centro de Costo lo determina el GRUPO ARTÍCULO, y la lista del
+   campo muestra SOLO los centros de ese grupo — antes mostraba los ocho del
+   catálogo y el usuario tenía que acertar a mano.
 
-   Queda editable a propósito (puede haber excepciones), pero si el valor no es
-   el que corresponde al grupo se avisa debajo del campo. */
-const CAMPOS_LIMPIAN_CENTRO = ['departamento','linea','familia','grupo_articulo'];
-function centroDeGrupo(grupo){
-  const mapa=(M().grupoCentro)||{};
-  return mapa[String(grupo||'').trim()] || '';
+     sin grupo         → deshabilitado (vacío, o con el valor del registro y aviso)
+     un centro         → autocompletado y bloqueado
+     varios centros    → lista acotada a esos centros
+     sin relación      → lista completa + aviso, para no bloquear la captura
+                         mientras alguien liga el centro en Catálogos
+
+   Al ABRIR un registro guardado el valor no se pisa: si no corresponde al grupo
+   se conserva, se marca el aviso y la lista queda habilitada para poder
+   corregirlo. Pisarlo silenciosamente perdería una excepción legítima. */
+// Campos tras los que hay que revisar el centro. Ojo: revisar, no siempre pisar
+// (ver ccOnClasifChange) — Línea y Familia no cambian el Grupo Artículo.
+const CAMPOS_REVISAN_CENTRO = ['departamento','linea','familia','grupo_articulo'];
+/* Acepta las dos formas del mapa: {grupo:[centros]} (API nueva) y
+   {grupo:"centro"} (API anterior al despliegue de V9). */
+function normalizarGrupoCentros(mapa){
+  const out={};
+  Object.keys(mapa||{}).forEach(g=>{
+    const v=mapa[g];
+    out[g] = Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
+  });
+  return out;
 }
+function centrosDeGrupo(grupo, mod){
+  const mapa=((mod||M()).grupoCentros)||{};
+  return mapa[String(grupo||'').trim()] || [];
+}
+function ccCombo(){ const cc=document.getElementById('fld_centro_costo'); return cc&&cc._combo?cc._combo:null; }
 function ccSetValor(v){
   const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
   if(cc._combo) cc._combo.setValue(v||''); else cc.value=v||'';
@@ -1450,38 +1520,88 @@ function ccAviso(txt){
   const av=document.getElementById('avisoCentroCosto');
   if(av) av.textContent=txt||'';
 }
-/* Aplica el centro que corresponde al grupo. `pisar`=true cuando el cambio lo
+/* Acota la lista y aplica el centro del grupo. `pisar`=true cuando el cambio lo
    disparó el usuario (hay que reemplazar el valor); false al abrir el
    formulario, donde el valor guardado se respeta y solo se avisa. */
 function syncCentroCosto(pisar){
-  const g=(document.getElementById('fld_grupo_articulo')||{}).value||'';
+  const g=String((document.getElementById('fld_grupo_articulo')||{}).value||'').trim();
   const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
-  const esperado=centroDeGrupo(g);
+  const cmb=ccCombo();
+  const centros=centrosDeGrupo(g);
   const actual=String(cc.value||'').trim();
-  if(pisar){
-    ccSetValor(esperado);                       // sin grupo o sin relación: queda vacío
-    ccAviso(g && !esperado
-      ? `«${g}» no tiene centro de costo asignado en Catálogos. Elíjalo a mano.` : '');
+  const setOpts=(o)=>{ if(cmb) cmb.setOptions(o); };
+  const setBloq=(b,ph)=>{ if(cmb) cmb.setDisabled(b,ph); };
+
+  // 1. Sin grupo: no hay de dónde sacar el centro.
+  if(!g){
+    setOpts([]); setBloq(true,'(seleccione el Grupo Artículo)');
+    if(pisar||!actual){ ccSetValor(''); ccAviso(''); return; }
+    // Se conserva el valor del registro, pero deshabilitado y con el valor a la
+    // vista el placeholder no se lee: sin este aviso el usuario ve un campo gris
+    // sin explicación. Pasa cuando el Grupo Artículo guardado no cuelga del
+    // Departamento y dependentSelect lo limpia al abrir el formulario.
+    ccAviso(`Sin Grupo Artículo no se puede determinar el Centro de Costo. Elija el grupo; «${actual}» se conserva mientras tanto.`);
     return;
   }
-  if(esperado && actual && actual!==esperado){
-    ccAviso(`Al Grupo Artículo «${g}» le corresponde «${esperado}».`);
-  } else if(esperado && !actual){
-    ccSetValor(esperado); ccAviso('');
+  // 2. El grupo no tiene centros ligados: no se bloquea la captura, se avisa.
+  if(!centros.length){
+    setOpts(M().lists.centro_costo||[]); setBloq(false,'-- Seleccione --');
+    ccAviso(`«${g}» no tiene centro de costo ligado`+(canManageCat()
+      ? '. Elíjalo a mano o líguelo en Catálogos → «Centro de Costo por Grupo Artículo».'
+      : ' en Catálogos. Elíjalo a mano o pídale a Compras que lo ligue al grupo.'));
+    return;
+  }
+  setOpts(centros);
+  // 3. Un solo centro: se pone y se bloquea. Si el registro traía otro valor, se
+  //    conserva y la lista queda habilitada para poder corregirlo.
+  if(centros.length===1){
+    const unico=centros[0];
+    if(pisar || !actual){ ccSetValor(unico); setBloq(true,'-- Seleccione --'); ccAviso(''); return; }
+    if(actual===unico){ setBloq(true,'-- Seleccione --'); ccAviso(''); return; }
+    setBloq(false,'-- Seleccione --');
+    ccAviso(`Al Grupo Artículo «${g}» le corresponde «${unico}»; este registro tiene «${actual}».`);
+    return;
+  }
+  // 4. Varios centros: el usuario elige entre esos.
+  setBloq(false,'-- Seleccione uno de los '+centros.length+' --');
+  if(pisar && !centros.includes(actual)) { ccSetValor(''); ccAviso(''); return; }
+  if(actual && !centros.includes(actual)){
+    ccAviso(`Al Grupo Artículo «${g}» le corresponden ${centros.map(c=>'«'+c+'»').join(' o ')}; este registro tiene «${actual}».`);
   } else ccAviso('');
+}
+/* Reacción a la clasificación contable. Se pisa el centro SOLO si el Grupo
+   Artículo quedó distinto del que había.
+
+   Antes se pisaba ante cualquier cambio de los cuatro campos, y Línea y Familia
+   NO cuelgan del grupo (el grupo depende solo del Departamento): corregir la
+   Familia de un registro con un centro histórico distinto lo reemplazaba en
+   silencio y volvía a bloquear el campo, así que el usuario ya no podía
+   devolverlo y guardaba un valor que nunca eligió. */
+let CC_GRUPO_PREVIO=null;
+function ccOnClasifChange(){
+  const g=String((document.getElementById('fld_grupo_articulo')||{}).value||'').trim();
+  if(g===CC_GRUPO_PREVIO){ syncCentroCosto(false); return; }   // el grupo no cambió: no se pisa
+  CC_GRUPO_PREVIO=g;
+  syncCentroCosto(true);
 }
 function wireCentroCosto(){
   const cc=document.getElementById('fld_centro_costo'); if(!cc) return;
-  CAMPOS_LIMPIAN_CENTRO.forEach(k=>{
+  CC_GRUPO_PREVIO=String((document.getElementById('fld_grupo_articulo')||{}).value||'').trim();
+  CAMPOS_REVISAN_CENTRO.forEach(k=>{
     const el=document.getElementById('fld_'+k); if(!el) return;
-    // Diferido: al cambiar Departamento/Línea/Familia, dependentSelect limpia
-    // Grupo Artículo en su propio listener. Sin el setTimeout se leería el
-    // grupo anterior y se pondría un centro que ya no corresponde.
-    el.addEventListener('change', ()=>setTimeout(()=>syncCentroCosto(true),0));
+    // Diferido: al cambiar Departamento, dependentSelect limpia Grupo Artículo en
+    // su propio listener. Sin el setTimeout se leería el grupo anterior y se
+    // pondría un centro que ya no corresponde.
+    el.addEventListener('change', ()=>setTimeout(ccOnClasifChange,0));
   });
   // Si el usuario cambia el centro a mano, se revisa la coherencia.
   cc.addEventListener('change', ()=>syncCentroCosto(false));
-  setTimeout(()=>syncCentroCosto(false),0);     // al abrir: respeta lo guardado y avisa
+  setTimeout(()=>{
+    // dependentSelect puede haber limpiado el grupo (valor guardado que no cuelga
+    // del departamento): se toma el valor ya resuelto como punto de partida.
+    CC_GRUPO_PREVIO=String((document.getElementById('fld_grupo_articulo')||{}).value||'').trim();
+    syncCentroCosto(false);                     // al abrir: respeta lo guardado y avisa
+  },0);
 }
 
 /* Marca en rojo los obligatorios que faltan y lleva al primero. Con 26 campos
@@ -1713,8 +1833,142 @@ function renderCatalogos(){
       b.appendChild(tr);
     });
   });
+  // No es una lista más: es la relación Grupo Artículo -> Centros de Costo, que
+  // es la que define qué ofrece el campo Centro de Costo en el formulario.
+  const gcTr=document.createElement('tr');
+  const grupos=(MODULES.codigos.lists.grupo_articulo||[]);
+  const sinCentro=grupos.filter(g=>!((MODULES.codigos.grupoCentros||{})[g]||[]).length).length;
+  gcTr.innerHTML=`<td><span class="tag">${MOD_LABELS.codigos}</span></td>
+    <td>Centro de Costo por Grupo Artículo</td>
+    <td>${grupos.length} grupo(s)${sinCentro?` · <span style="color:var(--danger)">${sinCentro} sin centro ligado</span>`:''}</td>
+    <td><div class="cat-actions"></div></td>`;
+  const gcBtn=document.createElement('button'); gcBtn.className='btn-ghost'; gcBtn.type='button'; gcBtn.textContent='Gestionar';
+  gcBtn.addEventListener('click', ()=>gcOpen(null));
+  gcTr.querySelector('.cat-actions').appendChild(gcBtn);
+  b.appendChild(gcTr);
 }
 function manageCat(modId,key){ ACT=modId; openOpt(key, LIST_LABELS[key]||key, null); }
+
+/* ============ CENTRO DE COSTO POR GRUPO ARTÍCULO (relación, migración V9) ============
+   No es un catálogo: el grupo y el centro ya existen y acá solo se liga o se
+   desliga el par (cat.GrupoArticuloCentroCosto). Un grupo puede tener varios.
+   Lo que se ligue acá es exactamente lo que ofrece el campo Centro de Costo del
+   formulario de Códigos. */
+let gcGrupo=null;                       // grupo abierto en la vista de detalle
+function gcMod(){ return MODULES.codigos; }
+function gcMapa(){ return (gcMod().grupoCentros)||{}; }
+function gcCentrosDe(g){ return (gcMapa()[g]||[]).slice().sort((a,b)=>a.localeCompare(b,'es')); }
+async function gcOpen(grupo){
+  if(!canManageCat()){ toast('Solo Compras y Administrador pueden ligar centros de costo'); return; }
+  // El mapa vive en MODULES.codigos: si el usuario estaba en Órdenes puede no
+  // estar cargado todavía.
+  if(!gcMod().grupoCentros){
+    try{ await loadCatalogsFor('codigos'); }catch(e){ toast('No se pudieron cargar los catálogos: '+e.message); return; }
+  }
+  gcGrupo=grupo||null;
+  document.getElementById('gcModal').classList.remove('hidden');
+  gcRender();
+}
+/* ＋ junto al campo del formulario: abre directo el grupo seleccionado. */
+function gcAbrirDesdeFormulario(){
+  const g=String((document.getElementById('fld_grupo_articulo')||{}).value||'').trim();
+  if(!g){ toast('Seleccione primero el Grupo Artículo'); return; }
+  if(!(gcMod().lists.grupo_articulo||[]).includes(g)){ toast(`«${g}» no está en el catálogo de Grupo Artículo`); return; }
+  gcOpen(g);
+}
+async function gcClose(){
+  document.getElementById('gcModal').classList.add('hidden');
+  gcGrupo=null;
+  // Si el formulario está abierto, la lista del campo tiene que reflejar lo que
+  // se acaba de ligar; syncCentroCosto(false) respeta el valor ya elegido.
+  if(document.getElementById('fld_centro_costo')) syncCentroCosto(false);
+  if(!document.getElementById('viewCatalogos').classList.contains('hidden')) renderCatalogos();
+}
+function gcVolver(){ gcGrupo=null; gcRender(); }
+function gcRender(){
+  const enDetalle=!!gcGrupo;
+  document.getElementById('gcLista').classList.toggle('hidden', enDetalle);
+  document.getElementById('gcDetalle').classList.toggle('hidden', !enDetalle);
+  document.getElementById('gcTitle').textContent = enDetalle
+    ? 'Centros de Costo · '+gcGrupo : 'Centro de Costo por Grupo Artículo';
+  if(enDetalle) gcRenderDetalle(); else gcRenderLista();
+}
+function gcRenderLista(){
+  const b=document.getElementById('gcBody'); b.innerHTML='';
+  const grupos=(gcMod().lists.grupo_articulo||[]);
+  if(!grupos.length){
+    b.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px">No hay grupos de artículo en el catálogo.</td></tr>';
+    return;
+  }
+  grupos.forEach(g=>{
+    const cs=gcCentrosDe(g);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${esc(g)}</td>
+      <td>${cs.length ? cs.map(c=>`<span class="tag">${esc(c)}</span>`).join(' ')
+                      : '<span style="color:var(--danger)">Sin centro ligado</span>'}</td>
+      <td style="text-align:right"></td>`;
+    // El botón se engancha por código y no con onclick="…": los nombres de los
+    // grupos llevan acentos y podrían llevar comillas, que romperían el atributo.
+    const btn=document.createElement('button'); btn.className='btn-ghost'; btn.type='button'; btn.textContent='Gestionar';
+    btn.addEventListener('click', ()=>gcOpen(g));
+    tr.lastElementChild.appendChild(btn);
+    b.appendChild(tr);
+  });
+}
+function gcRenderDetalle(){
+  const g=gcGrupo;
+  const cs=gcCentrosDe(g);
+  document.getElementById('gcDetTitulo').textContent=
+    cs.length===1 ? 'Un centro ligado: el formulario lo pondrá solo y bloqueado.'
+    : cs.length>1 ? `${cs.length} centros ligados: el formulario mostrará una lista con esos ${cs.length}.`
+    : 'Sin centros ligados: el formulario mostrará el catálogo completo y avisará.';
+  const b=document.getElementById('gcDetBody'); b.innerHTML='';
+  if(!cs.length){
+    b.innerHTML='<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:20px">Ningún centro ligado a este grupo.</td></tr>';
+  } else {
+    cs.forEach(c=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${esc(c)}</td><td style="text-align:right"></td>`;
+      const btn=document.createElement('button'); btn.className='icon-btn del-btn'; btn.type='button';
+      btn.title='Quitar del grupo'; btn.textContent='🗑️';
+      btn.addEventListener('click', ()=>gcQuitarCentro(c));
+      tr.lastElementChild.appendChild(btn);
+      b.appendChild(tr);
+    });
+  }
+  // Solo se ofrecen los centros que todavía no están ligados.
+  const disponibles=(gcMod().lists.centro_costo||[]).filter(c=>!cs.includes(c));
+  const sel=document.getElementById('gcSelect'); sel.innerHTML='';
+  disponibles.forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
+  document.getElementById('gcAgregar').style.display = disponibles.length ? 'flex' : 'none';
+  document.getElementById('gcDetNota').textContent = disponibles.length
+    ? 'Los centros de costo se crean en Catálogos → Centro de Costo; acá solo se ligan a este grupo.'
+    : 'Todos los centros del catálogo ya están ligados a este grupo.';
+}
+async function gcAgregarCentro(){
+  const centro=document.getElementById('gcSelect').value;
+  if(!centro){ toast('Elija un centro de costo'); return; }
+  try{
+    await api('POST','/grupo-centros/'+encodeURIComponent(gcGrupo), {centro});
+    await loadCatalogsFor('codigos');
+    gcRender(); toast('Centro de costo ligado a «'+gcGrupo+'»');
+  }catch(e){ toast('Error: '+e.message); }
+}
+function gcQuitarCentro(centro){
+  const g=gcGrupo;
+  const ultimo=gcCentrosDe(g).length===1;
+  askConfirmCB(
+    ultimo ? `Es el único centro ligado a «${g}». Si lo quita, el formulario volverá a mostrar el catálogo completo para ese grupo.`
+           : `¿Quitar este centro de costo del Grupo Artículo «${g}»?`,
+    centro,
+    async ()=>{
+      await api('DELETE','/grupo-centros/'+encodeURIComponent(g)+'/'+encodeURIComponent(centro));
+      await loadCatalogsFor('codigos');
+      gcRender(); toast('Centro de costo quitado del grupo');
+    },
+    {titulo:'Quitar centro de costo', ok:'Sí, quitar', icono:'🔗'}
+  );
+}
 
 /* ====================== USUARIOS Y ROLES (solo Administrador) ====================== */
 async function showUsuarios(){
@@ -2390,6 +2644,13 @@ function cargaProcesarMarcados(){
    valores, que es más útil que no ofrecer ninguno. */
 function cargaSugerencias(f, datos){
   const m=codModule();
+  // Centro de Costo: se acotan a los del Grupo Artículo que traiga la fila, igual
+  // que en el formulario. Si el grupo no tiene ninguno ligado se ofrece el
+  // catálogo completo, que es más útil que no ofrecer nada.
+  if(f.key==='centro_costo'){
+    const cs=centrosDeGrupo((datos&&datos.grupo_articulo)||'', m);
+    return cs.length ? cs.slice().sort((a,b)=>a.localeCompare(b,'es')) : ((m.lists&&m.lists.centro_costo)||[]);
+  }
   if(f.type==='list') return (m.lists&&m.lists[f.list])||[];
   if(f.type!=='dependent') return [];
   const h=m.hier&&m.hier[f.key]; if(!h||!h.map) return [];
@@ -2433,19 +2694,30 @@ function cargaCodSyncDeps(){
       av.textContent=`«${padre}» no está en el catálogo, así que no se puede comprobar la ${f.label.toLowerCase()}.`;
     } else av.textContent='';
   });
-  // Centro de Costo: no es dependiente, pero lo determina el Grupo Artículo
-  // (cat.GrupoArticulo.CentroCostoId). Acá solo se avisa — el modal acepta
-  // texto libre porque lo que se corrige viene de un Excel.
+  // Centro de Costo: no es dependiente, pero lo determinan los centros ligados al
+  // Grupo Artículo (cat.GrupoArticuloCentroCosto, V9). Acá solo se acota la
+  // sugerencia y se avisa — el modal acepta texto libre porque lo que se está
+  // corrigiendo viene de un Excel.
   const gEl=document.getElementById('cfld_grupo_articulo');
   const cEl=document.getElementById('cfld_centro_costo');
   const cAv=document.getElementById('cavi_centro_costo');
   if(gEl && cEl && cAv){
     const g=String(gEl.value||'').trim(), c=String(cEl.value||'').trim();
-    const esperado=((m.grupoCentro)||{})[g]||'';
-    const malo=!!(g && esperado && c && c!==esperado);
+    const centros=centrosDeGrupo(g, m);
+    // La sugerencia se rearma con el grupo actual (el usuario pudo cambiarlo acá).
+    const dl=document.getElementById('dlc_centro_costo');
+    if(dl){
+      dl.innerHTML='';
+      cargaSugerencias({key:'centro_costo',type:'list',list:'centro_costo'}, {grupo_articulo:g})
+        .forEach(v=>{ const o=document.createElement('option'); o.value=v; dl.appendChild(o); });
+    }
+    const cuales=centros.map(x=>'«'+x+'»').join(' o ');
+    const malo=!!(g && centros.length && c && !centros.includes(c));
     cEl.classList.toggle('campo-falta', malo);
-    cAv.textContent = malo ? `Al Grupo Artículo «${g}» le corresponde «${esperado}».`
-      : (g && esperado && !c ? `Al Grupo Artículo «${g}» le corresponde «${esperado}».` : '');
+    cAv.textContent = !g || !centros.length ? ''
+      : malo ? `Al Grupo Artículo «${g}» le ${centros.length>1?'corresponden':'corresponde'} ${cuales}.`
+      : !c   ? `Al Grupo Artículo «${g}» le ${centros.length>1?'corresponden':'corresponde'} ${cuales}.`
+      : '';
   }
 }
 function cargaCodEditar(detId){

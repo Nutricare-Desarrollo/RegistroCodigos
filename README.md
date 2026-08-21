@@ -33,6 +33,8 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | POST   | /api/solicitudes             | Crear registro                       |
 | PUT    | /api/solicitudes/{id}        | Actualizar registro                  |
 | DELETE | /api/solicitudes/{id}        | Eliminar registro (códigos)          |
+| POST   | /api/grupo-centros/{grupo}   | Ligar un Centro de Costo a un Grupo Artículo (`{centro}`) |
+| DELETE | /api/grupo-centros/{grupo}/{centro} | Desligarlo del grupo          |
 | GET    | /api/catalogos-ordenes       | Listas del módulo de órdenes         |
 | POST/PUT/DELETE | /api/catalogos-ordenes/{tipo}[/{valor}] | Mantenimiento de opciones (órdenes) |
 | GET    | /api/ordenes                 | Listado de órdenes de pedido         |
@@ -60,7 +62,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    `RegistroCodigos`.
 2. Ejecutar, en orden, los scripts de `database/` con `psql` (o pgAdmin / Azure Data
    Studio). Los base (`RegistroCodigos.sql`, `OrdenPedido.sql`) crean esquemas, tablas y
-   catálogos; las migraciones `V2`/`V3`/`V4` son idempotentes y no destructivas (se pueden
+   catálogos; las migraciones `V2` a `V9` son idempotentes y no destructivas (se pueden
    correr sobre una base con datos). `V4_Adjuntos.sql` crea la tabla `dbo.Adjunto` (archivo
    por registro en base64):
    ```bash
@@ -73,6 +75,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V6_Modelo_Marca_Adjuntos_Multiples.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V7_Cargas.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V8_Justificacion.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V9_Grupo_CentroCosto.sql
    ```
 3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
@@ -369,30 +372,89 @@ Excel: las tres cosas salen solas de declarar el campo con `type:"list"` en
 
 ## Centro de Costo
 
-La relación real vive en **`cat.GrupoArticulo`**: cada Grupo Artículo apunta a un **Departamento**
-*y* a un **Centro de Costo** (columnas `DepartamentoId` y `CentroCostoId`, migración **`V3`**).
-`cat.CentroCosto` es un catálogo plano, sin padre.
+La relación vive en **`cat.GrupoArticuloCentroCosto`** (migración **`V9`**): una tabla
+`GrupoArticuloId` + `CentroCostoId` que admite **varios centros por grupo**. `cat.CentroCosto`
+es un catálogo plano, sin padre.
 
 **No cuelga del Departamento**, y no puede: `CO.EQ._ESPECIALIDADES_QUIRÚRGICAS` tiene dos grupos
 con centros distintos —*Terapias Quirúrgicas* → `20-2002-200202` y *Ortopédia* → `20-2002-200203`—
-así que desde el departamento solo no se sabe cuál va. Las siete relaciones cargadas por `V3`
-coinciden exactamente con el Excel *Relaciones Codigos.xlsx*; **no hace falta migración nueva**.
+así que desde el departamento solo no se sabe cuál va.
 
-En el formulario de Códigos, el **Grupo Artículo determina el Centro de Costo**:
+`V3` había dejado la relación como **una columna** (`cat.GrupoArticulo.CentroCostoId`): servía para
+sugerir el centro, pero no permitía que un grupo tuviera dos válidos. `V9` mueve la relación a su
+propia tabla y **no borra** la columna de `V3`: la deja como legado (la API ya no la lee) para poder
+volver atrás sin perder datos. La semilla de `V9` copia esa columna y además vuelve a insertar las
+**siete** relaciones confirmadas, así que la migración deja la tabla correcta incluso sobre una base
+donde la columna nunca se llenó.
 
-- Al elegir Grupo Artículo, el Centro de Costo se llena con el que le corresponde (mapa
-  `grupo_centro` de `/api/catalogos`, que la API ya enviaba y el frontend **no leía**).
-- Al cambiar Departamento, Línea o Familia se limpia el Grupo Artículo y con él el Centro de
-  Costo. El recálculo va **diferido** (`setTimeout`) porque `dependentSelect` limpia el grupo en
+En el formulario de Códigos, el **Grupo Artículo determina qué muestra la lista** de Centro de
+Costo — antes mostraba los ocho centros del catálogo y el usuario tenía que acertar a mano:
+
+| Grupo Artículo | Campo Centro de Costo |
+|---|---|
+| sin seleccionar | **deshabilitado**; vacío, o con el valor del registro y un aviso que lo explica |
+| con **un** centro ligado | **autocompletado y bloqueado** |
+| con **varios** centros | lista **acotada a esos** centros |
+| **sin** centros ligados | catálogo completo + aviso |
+
+- El mapa llega en `grupo_centros` de `/api/catalogos` (**grupo → lista** de centros). Se mantiene
+  además `grupo_centro` (un solo valor) para no romper una versión anterior del frontend, y
+  `normalizarGrupoCentros()` acepta las dos formas por lo mismo, al revés.
+- El centro **solo se pisa si el Grupo Artículo quedó distinto** del anterior (`CC_GRUPO_PREVIO`).
+  Cambiar Departamento sí limpia el grupo —el grupo cuelga del departamento— y con él el centro;
+  cambiar **Línea o Familia no**, porque el grupo no depende de ellas. Antes se pisaba ante
+  cualquiera de los cuatro: corregir la Familia de un registro con un centro histórico distinto lo
+  reemplazaba **en silencio** y volvía a bloquear el campo, así que el usuario ya no podía
+  devolverlo y guardaba un valor que nunca eligió.
+- El recálculo va **diferido** (`setTimeout`) porque `dependentSelect` limpia el Grupo Artículo en
   su propio listener: sin eso se leería el grupo anterior.
-- **Queda editable**, por si hay excepciones, pero si el valor no es el que corresponde al grupo
-  se avisa debajo del campo: *"Al Grupo Artículo «Ortopédia» le corresponde «20-2002-200203»"*.
-  Al **editar** un registro viejo se respeta lo guardado y solo se avisa.
-- Si el grupo no tiene centro asignado en el catálogo, el campo queda vacío y lo dice.
-- El modal de un código de la **bandeja de cargas** muestra el mismo aviso.
+- Al **abrir un registro guardado** el valor **no se pisa**. Si no corresponde al grupo se conserva,
+  se avisa debajo del campo (*"Al Grupo Artículo «Ortopédia» le corresponde «20-2002-200203»; este
+  registro tiene «…»"*) y la lista **queda habilitada** para poder corregirlo. Pisarlo en silencio
+  perdería una excepción legítima; bloquearlo dejaría el registro imposible de arreglar.
+- Un grupo **sin centros ligados** no bloquea la captura: se ofrece el catálogo completo y el aviso
+  remite a *Catálogos → Centro de Costo por Grupo Artículo*. Hoy es el caso de **`Cuidado Crónico`**,
+  el único grupo del catálogo que nunca tuvo centro (tampoco en `V3`).
+- El modal de un código de la **bandeja de cargas** acota igual las sugerencias y avisa nombrando
+  **todas** las opciones válidas cuando hay más de una. Ese modal sigue aceptando **texto libre**,
+  a propósito: lo que se está corrigiendo viene de un Excel.
 
-La API sigue aceptando cualquier centro del catálogo (`type:'cat'`), a propósito: endurecerlo
-rechazaría los registros históricos al editarlos y las filas de Excel que hoy sí entran.
+### Gestión de las relaciones
+
+**Catálogos → "Centro de Costo por Grupo Artículo"** lista todos los grupos con sus centros y marca
+en rojo los que no tienen ninguno. Entrando a un grupo se **ligan** y **desligan** centros; el
+desplegable ofrece solo los que faltan. El botón **＋** junto al campo del formulario abre directo
+ese grupo, en vez del catálogo plano de Centro de Costo — que es lo que de verdad cambia la lista.
+Solo lo ven **Compras** y **Administrador** (`canManageCat()`).
+
+- Endpoints: `POST /api/grupo-centros/{grupo}` con `{centro}` y
+  `DELETE /api/grupo-centros/{grupo}/{centro}`. **No** entran en `catalogos/{tipo}` porque no crean
+  ni borran opciones: el grupo y el centro ya existen, acá solo se liga o desliga el par.
+- Quitar el **último** centro de un grupo se puede, y la confirmación avisa que el formulario
+  volverá a mostrar el catálogo completo para ese grupo.
+- Desligar un centro **no toca los registros ya guardados**: `dbo.Solicitud.CentroCostoId` apunta al
+  catálogo, no a esta relación. Al editarlos aplica la regla del valor histórico de arriba.
+- Los centros de costo se **crean** en *Catálogos → Centro de Costo*; acá solo se ligan. Borrar uno
+  del catálogo queda bloqueado por FK **mientras algún grupo lo tenga ligado** ("La opción está en
+  uso"); al desligarlo de todos, se puede borrar.
+  - Para que eso sea cierto, `V9` **suelta la FK `FK_Grupo_CentroCosto`** que `V3` había puesto sobre
+    la columna legada. Como la API ya no escribe esa columna, la FK dejaba los siete centros
+    sembrados **imposibles de borrar para siempre**: desligarlos en la pantalla nueva no alcanzaba y
+    el mensaje no decía quién los usaba. Los **datos** de la columna no se tocan.
+
+### Si se despliega la API antes de correr `V9`
+
+La consulta de `cat.GrupoArticuloCentroCosto` en `/api/catalogos` va en su **propio `try`**. Sin eso,
+la tabla faltante tumbaba **todo** el endpoint y el formulario se abría con las 16 listas vacías por
+un solo campo. Con el `catch`, el único efecto es que ningún grupo tiene centros ligados: el campo
+degrada al caso "grupo sin centros" (catálogo completo + aviso) y se deja un `warn` en los logs de la
+Function.
+
+La API sigue aceptando cualquier centro del catálogo al guardar un registro (`type:'cat'`), a
+propósito: endurecerlo rechazaría los registros históricos al editarlos y las filas de Excel que hoy
+sí entran. Por lo mismo, la **plantilla de Excel** sigue trayendo la lista completa en esa columna
+(Excel no admite listas en cascada, ver la sección de la plantilla): el filtro por grupo es del
+formulario, no del archivo.
 
 
 

@@ -260,14 +260,33 @@ app.http('catalogos', {
       const unidades = (await query(
         `SELECT Nombre FROM cat.Unidad WHERE Activo=true ORDER BY Orden NULLS LAST, Nombre`)).rows.map(r => r.nombre);
 
-      // Grupo de artículo con su departamento y centro de costo relacionados.
+      // Grupo de artículo con su departamento.
       const grupos = (await query(
-        `SELECT g.Nombre AS nombre, d.Nombre AS dep, c.Nombre AS centro
+        `SELECT g.Nombre AS nombre, d.Nombre AS dep
          FROM cat.GrupoArticulo g
          LEFT JOIN cat.Departamento d ON d.Id = g.DepartamentoId
-         LEFT JOIN cat.CentroCosto  c ON c.Id = g.CentroCostoId
          WHERE g.Activo=true ORDER BY g.Nombre`)).rows;
       const grupo_articulo = grupos.map(g => g.nombre);
+
+      // Centros de costo de cada grupo (tabla de relación, migración V9: un grupo
+      // puede tener VARIOS). La columna cat.GrupoArticulo.CentroCostoId de V3 quedó
+      // como legado y ya no se lee: la semilla de V9 la copió a esta tabla.
+      // El catch es a propósito: si la Function se despliega ANTES de correr V9, la
+      // tabla no existe y sin él se caería TODO /api/catalogos — el formulario se
+      // abriría con las 16 listas vacías por un campo. Así solo queda sin acotar el
+      // Centro de Costo, que degrada al caso "grupo sin centros ligados".
+      let gruposCentros = [];
+      try {
+        gruposCentros = (await query(
+          `SELECT g.Nombre AS grupo, c.Nombre AS centro
+           FROM cat.GrupoArticuloCentroCosto gc
+           JOIN cat.GrupoArticulo g ON g.Id = gc.GrupoArticuloId
+           JOIN cat.CentroCosto   c ON c.Id = gc.CentroCostoId
+           WHERE g.Activo=true AND c.Activo=true
+           ORDER BY g.Nombre, c.Nombre`)).rows;
+      } catch (e) {
+        context.warn('cat.GrupoArticuloCentroCosto no disponible (¿falta correr V9?): ' + e.message);
+      }
 
       const [centro_costo, empaque, tipo_implante,
              origen, proveedores, sino] = await Promise.all([
@@ -303,17 +322,25 @@ app.http('catalogos', {
       lineas.forEach(l => familiasMap[l.nombre] = []);
       familias.forEach(f => { (familiasMap[f.lin] = familiasMap[f.lin] || []).push(f.nombre); });
 
-      // Grupo de artículo por departamento + mapa grupo -> centro de costo.
+      // Grupo de artículo por departamento + mapa grupo -> centros de costo.
       const grupo_by_dept = {};
       deps.forEach(d => grupo_by_dept[d.nombre] = []);
       grupos.forEach(g => { if (g.dep) (grupo_by_dept[g.dep] = grupo_by_dept[g.dep] || []).push(g.nombre); });
+      // grupo_centros: grupo -> [centros]. Todos los grupos aparecen, con [] si no
+      // tienen ninguno ligado, para que el frontend distinga "sin relación" de
+      // "grupo desconocido".
+      const grupo_centros = {};
+      grupo_articulo.forEach(g => grupo_centros[g] = []);
+      gruposCentros.forEach(r => { (grupo_centros[r.grupo] = grupo_centros[r.grupo] || []).push(r.centro); });
+      // grupo_centro (un solo valor) se mantiene por compatibilidad con versiones
+      // anteriores del frontend, que lo leen como string. Es el primero de la lista.
       const grupo_centro = {};
-      grupos.forEach(g => { if (g.centro) grupo_centro[g.nombre] = g.centro; });
+      Object.keys(grupo_centros).forEach(g => { if (grupo_centros[g].length) grupo_centro[g] = grupo_centros[g][0]; });
 
       return json(200, {
         departamentos: deps.map(d => d.nombre),
         dept_lines, familias: familiasMap,
-        grupo_articulo, grupo_by_dept, grupo_centro,
+        grupo_articulo, grupo_by_dept, grupo_centros, grupo_centro,
         modelos, marcas,
         centro_costo, unidades, empaque, tipo_implante,
         origen, proveedores, lote: sino, es_implantable: sino
@@ -437,6 +464,72 @@ app.http('catalogo-delete', {
       context.error(e);
       if (isFK(e)) return json(409, { error: 'La opción está en uso y no se puede eliminar' });
       return json(500, { error: 'No se pudo eliminar', detail: e.message });
+    }
+  }
+});
+
+/* ============================================================
+   Centros de costo ligados a un Grupo Artículo  (migración V9)
+   POST   /api/grupo-centros/{grupo}            body {centro}
+   DELETE /api/grupo-centros/{grupo}/{centro}
+
+   Es una relación, no un catálogo: el grupo y el centro ya existen y acá solo
+   se liga o se desliga el par. Por eso no entra en catalogos/{tipo}, que crea
+   y borra opciones.
+   ============================================================ */
+async function grupoArticuloId(nombre) {
+  const r = await query(`SELECT Id FROM cat.GrupoArticulo WHERE Nombre=$1`, [nombre]);
+  return r.rows[0] ? r.rows[0].id : null;
+}
+async function centroCostoId(nombre) {
+  const r = await query(`SELECT Id FROM cat.CentroCosto WHERE Nombre=$1`, [nombre]);
+  return r.rows[0] ? r.rows[0].id : null;
+}
+
+app.http('grupo-centro-add', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'grupo-centros/{grupo}',
+  handler: async (request, context) => {
+    try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
+      const grupo = decodeURIComponent(request.params.grupo);
+      const body = await request.json();
+      const centro = (body.centro || '').trim();
+      if (!centro) return json(400, { error: 'Falta el centro de costo' });
+      const gId = await grupoArticuloId(grupo);
+      if (!gId) return json(400, { error: `El Grupo Artículo "${grupo}" no existe` });
+      const cId = await centroCostoId(centro);
+      if (!cId) return json(400, { error: `El Centro de Costo "${centro}" no existe en el catálogo` });
+      await query(
+        `INSERT INTO cat.GrupoArticuloCentroCosto (GrupoArticuloId, CentroCostoId)
+         VALUES ($1, $2) ON CONFLICT DO NOTHING`, [gId, cId]);
+      return json(201, { ok: true });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudo ligar el centro de costo', detail: e.message });
+    }
+  }
+});
+
+app.http('grupo-centro-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'grupo-centros/{grupo}/{centro}',
+  handler: async (request, context) => {
+    try {
+      if (!(await requireCatalogo(request))) return json(403, { error: 'No tiene permiso para modificar catálogos' });
+      const grupo  = decodeURIComponent(request.params.grupo);
+      const centro = decodeURIComponent(request.params.centro);
+      const gId = await grupoArticuloId(grupo);
+      const cId = await centroCostoId(centro);
+      if (!gId || !cId) return json(404, { error: 'La relación no existe' });
+      // Los registros ya guardados NO se tocan: dbo.Solicitud.CentroCostoId apunta al
+      // catálogo, no a esta relación. Al editarlos, el formulario conserva el valor
+      // guardado y avisa que no corresponde al grupo.
+      const r = await query(
+        `DELETE FROM cat.GrupoArticuloCentroCosto WHERE GrupoArticuloId=$1 AND CentroCostoId=$2`,
+        [gId, cId]);
+      return json(200, { ok: true, deleted: r.rowCount });
+    } catch (e) {
+      context.error(e);
+      return json(500, { error: 'No se pudo quitar el centro de costo', detail: e.message });
     }
   }
 });
