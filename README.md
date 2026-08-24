@@ -53,6 +53,9 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | PUT    | /api/cargas/{id}/codigos/{detId} | Corregir un código pendiente     |
 | DELETE | /api/cargas/{id}/codigos/{detId} | Quitar un código de la carga     |
 | POST   | /api/cargas/{id}/procesar    | Registrar los códigos marcados (`{ids:[…]}`) |
+| GET    | /api/notificaciones          | Cuentas de correo que reciben avisos |
+| POST   | /api/notificaciones          | Agregar una cuenta (`{correo}`)      |
+| DELETE | /api/notificaciones/{id}     | Quitar una cuenta                    |
 
 ## Puesta en marcha
 
@@ -62,7 +65,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    `RegistroCodigos`.
 2. Ejecutar, en orden, los scripts de `database/` con `psql` (o pgAdmin / Azure Data
    Studio). Los base (`RegistroCodigos.sql`, `OrdenPedido.sql`) crean esquemas, tablas y
-   catálogos; las migraciones `V2` a `V9` son idempotentes y no destructivas (se pueden
+   catálogos; las migraciones `V2` a `V10` son idempotentes y no destructivas (se pueden
    correr sobre una base con datos). `V4_Adjuntos.sql` crea la tabla `dbo.Adjunto` (archivo
    por registro en base64):
    ```bash
@@ -76,6 +79,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V7_Cargas.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V8_Justificacion.sql
    psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V9_Grupo_CentroCosto.sql
+   psql "host=<servidor>.postgres.database.azure.com port=5432 dbname=RegistroCodigos user=<usuario> password=<clave> sslmode=require" -f database/V10_Notificaciones.sql
    ```
 3. En **Redes / Firewall** del servidor, permitir "Servicios de Azure" y tu IP.
 
@@ -529,6 +533,44 @@ de la fila (ver *Cascada en la plantilla de Códigos*), con la misma excepción 
 **sin centros ligados** ofrece el catálogo completo.
 
 
+
+## Notificaciones (cuentas de correo)
+
+**Configuración → Notificaciones** mantiene la lista de correos que reciben los avisos del
+portal. Visible solo para **Compras** y **Administrador** (`canManageCat()`, el mismo criterio
+que Catálogos y Conversiones), y la API lo vuelve a comprobar en los tres endpoints — el menú
+oculto no es un permiso.
+
+Un grid de una columna, **Cuenta**, con **filtro** de texto ("contiene"), **＋ Agregar** sobre el
+grid y **🗑️** por fila. El pie dice *"N cuentas de M"* con **Quitar filtros**, y se entra siempre
+sin filtros aplicados. No hay **editar**: cambiar un correo es quitar uno y poner otro.
+
+Base: `dbo.NotificacionCuenta` (**migración `V10`**). Es tabla propia y no un catálogo de `cat.`
+porque no alimenta ninguna lista desplegable — es configuración del sistema, con su propia
+validación. En `cat.` habría quedado colgando del mantenimiento genérico de Catálogos, donde
+cualquier texto es una opción válida.
+
+**El envío de los correos todavía no existe.** Esta pantalla define *a quién* avisarle, no
+*cuándo*: falta decidir qué evento lo dispara y por dónde se manda (Azure Communication Services,
+SMTP, Logic App…). Cuando se defina, la tabla que hay que leer es esta.
+
+### Validación del correo
+
+La misma expresión en los tres lados —formulario, API y un `CHECK` en la base—: algo, arroba,
+algo, punto, algo, sin espacios. Es **a propósito laxa**: un correo no se valida de verdad con una
+expresión regular, la única prueba real es mandarle un mensaje. Lo que sí atrapa es el dedazo
+(falta la arroba, quedó un espacio, no hay dominio).
+
+- El correo se guarda **en minúsculas** y la columna lleva `UNIQUE`, así que `Compras@…` y
+  `compras@…` son la misma cuenta y la segunda se rechaza. Un `CHECK` extra impide que entre algo
+  en mayúsculas por otra vía.
+- Un correo de **otro dominio** (distinto de `nutricare.co.cr`) **avisa y pide confirmar**, no se
+  bloquea. Bloquearlo dejaría sin salida el día que haya que avisarle a alguien de afuera; no decir
+  nada dejaría pasar el dedazo que manda avisos internos fuera de la empresa. Si el correo se
+  corrige después del aviso, el aviso se retira: si no, el segundo *Guardar* mandaría una cuenta
+  distinta de la advertida.
+- Si el listado falla al cargar, la pantalla muestra **"No se pudo cargar el listado"** con
+  **Reintentar**, no el mensaje de "no hay cuentas" — mismo criterio que la bandeja de cargas.
 
 ## Seguridad
 - Las credenciales de PostgreSQL y el secret de Entra ID viven **solo** en las App

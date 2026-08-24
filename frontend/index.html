@@ -263,6 +263,7 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
         <div class="nav-label">Configuración</div>
         <div class="nav-item hidden" id="nav-conversiones" onclick="showConversiones()"><span class="ic">🔁</span> Conversiones</div>
         <div class="nav-item" id="nav-catalogos" onclick="showCatalogos()"><span class="ic">⚙️</span> Catálogos</div>
+        <div class="nav-item hidden" id="nav-notificaciones" onclick="showNotificaciones()"><span class="ic">✉️</span> Notificaciones</div>
         <div class="nav-item hidden" id="nav-usuarios" onclick="showUsuarios()"><span class="ic">👥</span> Usuarios y Roles</div>
       </nav>
       <div class="userbox">
@@ -358,6 +359,22 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
           <div class="tbl-wrap"><table id="convTable"><thead id="convHead"></thead><tbody id="convBody"></tbody></table></div>
           <div id="convEmpty" class="empty hidden"><div class="big">🔁</div><div>No hay conversiones registradas.</div></div>
           <div class="grid-foot" id="convFoot"></div>
+        </div>
+      </section>
+
+      <!-- NOTIFICACIONES: cuentas de correo (solo Compras / Administrador) -->
+      <section id="viewNotificaciones" class="hidden">
+        <div class="page-head">
+          <div><h2>Notificaciones</h2><div class="sub">Cuentas de correo que reciben los avisos del portal</div></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-ghost" onclick="loadNotificaciones()">🔄 Actualizar</button>
+            <button class="btn-primary" onclick="notifNuevo()">＋ Agregar</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table id="notifTable"><thead id="notifHead"></thead><tbody id="notifBody"></tbody></table></div>
+          <div id="notifEmpty" class="empty hidden"><div class="big">✉️</div><div>No hay cuentas registradas.</div></div>
+          <div class="grid-foot" id="notifFoot"></div>
         </div>
       </section>
 
@@ -562,6 +579,26 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
 </div>
 
 <!-- MODAL Conversión (Nuevo / Editar) -->
+<div id="notifModal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head"><h3>Agregar cuenta</h3><button class="x" onclick="notifClose()">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field full">
+          <label>Cuenta de correo <span class="req">*</span></label>
+          <input type="email" id="notif_correo" placeholder="nombre@nutricare.co.cr" maxlength="200" autocomplete="off">
+        </div>
+      </div>
+      <p id="notifError" style="color:var(--danger);font-size:13px;margin:8px 0 0;min-height:16px"></p>
+      <p id="notifAviso" class="hidden" style="color:var(--warn);font-size:13px;margin:6px 0 0"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-no" onclick="notifClose()">Cancelar</button>
+      <button class="btn-primary" id="notifSaveBtn" onclick="notifGuardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div id="convModal" class="overlay hidden">
   <div class="modal">
     <div class="modal-head"><h3 id="convModalTitle">Nueva conversión</h3><button class="x" onclick="convClose()">×</button></div>
@@ -778,6 +815,7 @@ function onRoleSim(){
   if(!isAdmin() && !document.getElementById('viewUsuarios').classList.contains('hidden')) showGrid();
   if(!canManageCat() && !document.getElementById('viewCatalogos').classList.contains('hidden')) showGrid();
   if(!canManageCat() && !document.getElementById('viewConversiones').classList.contains('hidden')) showGrid();
+  if(!canManageCat() && !document.getElementById('viewNotificaciones').classList.contains('hidden')) showGrid();
   if(!canCargas() && (!document.getElementById('viewCargas').classList.contains('hidden')
                    || !document.getElementById('viewCargaDet').classList.contains('hidden'))) showGrid();
   renderMain();
@@ -790,6 +828,8 @@ function applyRoleVisibility(){
   document.getElementById('nav-catalogos').classList.toggle('hidden', !canManageCat());
   // Conversiones: visible solo para Compras y Administrador.
   document.getElementById('nav-conversiones').classList.toggle('hidden', !canManageCat());
+  // Notificaciones: mismo criterio (Compras y Administrador).
+  document.getElementById('nav-notificaciones').classList.toggle('hidden', !canManageCat());
 }
 
 /* ====================== CARGA DE DATOS ====================== */
@@ -812,7 +852,7 @@ async function loadCatalogsFor(id){
 async function loadRecords(){ M().records = await api('GET', M().api.rec); }
 
 /* ====================== NAVEGACIÓN ====================== */
-const VIEWS=['viewDashboard','viewGrid','viewForm','viewConversiones','viewCatalogos','viewUsuarios','viewCargas','viewCargaDet'];
+const VIEWS=['viewDashboard','viewGrid','viewForm','viewConversiones','viewCatalogos','viewNotificaciones','viewUsuarios','viewCargas','viewCargaDet'];
 function showOnly(id){ VIEWS.forEach(v=>document.getElementById(v).classList.toggle('hidden', v!==id)); }
 function setNav(id){ document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); const n=document.getElementById(id); if(n) n.classList.add('active'); }
 async function switchModule(id){
@@ -3048,11 +3088,138 @@ function convEliminar(id){
   });
 }
 
+/* ====================== NOTIFICACIONES (Compras / Administrador) ======================
+   Lista de cuentas de correo que reciben los avisos del portal. Solo agregar y
+   eliminar: no hay editar, porque cambiar un correo es borrar uno y poner otro.
+   Backend: dbo.NotificacionCuenta (migración V10) vía /api/notificaciones.
+
+   El ENVÍO de los correos todavía no existe: esta pantalla define a quién
+   avisarle, no cuándo.
+   ------------------------------------------------------------------------ */
+let NOTIF_ROWS=[], NOTIF_FILTERS={};
+const NOTIF_COLS=[{k:'correo', l:'Cuenta'}];
+// Misma expresión que el CHECK de V10 y que la validación de la API: algo,
+// arroba, algo, punto, algo, sin espacios. A propósito laxa — un correo no se
+// valida de verdad con una regex, la única prueba es mandarle un mensaje. Lo
+// que sí atrapa es el dedazo: falta la arroba, quedó un espacio, no hay dominio.
+const NOTIF_RE=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const NOTIF_DOMINIO='nutricare.co.cr';
+
+async function showNotificaciones(){
+  if(!canManageCat()){ toast('Su rol no tiene acceso'); showGrid(); return; }
+  setNav('nav-notificaciones'); showOnly('viewNotificaciones');
+  NOTIF_FILTERS={};                       // se entra siempre sin filtros, como las demás pantallas
+  await loadNotificaciones();
+}
+async function loadNotificaciones(){
+  const b=document.getElementById('notifBody');
+  b.innerHTML='<tr><td style="padding:20px;color:var(--muted)">Cargando…</td></tr>';
+  try{ NOTIF_ROWS=await api('GET','/notificaciones'); }
+  catch(e){
+    NOTIF_ROWS=[];
+    // Igual que en la bandeja de cargas: se distingue "no se pudo cargar" de
+    // "no hay cuentas", que si no hace creer que la lista se vació sola.
+    document.getElementById('notifEmpty').classList.add('hidden');
+    document.getElementById('notifTable').classList.remove('hidden');
+    document.getElementById('notifHead').innerHTML='';
+    document.getElementById('notifFoot').classList.add('hidden');
+    b.innerHTML=`<tr><td style="padding:24px;text-align:center;color:var(--danger)">No se pudo cargar el listado: ${esc(e.message)}`
+      +` <button class="btn-ghost" style="margin-left:10px" onclick="loadNotificaciones()">Reintentar</button></td></tr>`;
+    return;
+  }
+  renderNotificaciones();
+}
+function notifFilter(k,v){ NOTIF_FILTERS[k]=v; notifRenderBody(); }
+function notifFiltered(){
+  return NOTIF_ROWS.filter(r=> Object.keys(NOTIF_FILTERS).every(k=>{
+    const f=(NOTIF_FILTERS[k]||'').trim().toLowerCase(); if(!f) return true;
+    return String(r[k]==null?'':r[k]).toLowerCase().includes(f);
+  }));
+}
+function notifQuitarFiltros(){ NOTIF_FILTERS={}; renderNotificaciones(); }
+function renderNotificaciones(){
+  document.getElementById('notifHead').innerHTML=
+    `<tr>${NOTIF_COLS.map(c=>`<th>${c.l}</th>`).join('')}<th style="text-align:right;width:120px">Acciones</th></tr>`
+    +`<tr class="filter-row">${NOTIF_COLS.map(c=>`<th><input type="text" placeholder="Filtrar…" oninput="notifFilter('${c.k}',this.value)" value="${attr(NOTIF_FILTERS[c.k])}"></th>`).join('')}<th></th></tr>`;
+  notifRenderBody();
+}
+function notifRenderBody(){
+  const rows=notifFiltered(), b=document.getElementById('notifBody'); b.innerHTML='';
+  const vacio=NOTIF_ROWS.length===0;
+  document.getElementById('notifEmpty').classList.toggle('hidden', !vacio);
+  document.getElementById('notifTable').classList.toggle('hidden', vacio);
+  const foot=document.getElementById('notifFoot');
+  foot.classList.toggle('hidden', vacio);
+  if(vacio) return;
+  const hayFiltro=Object.values(NOTIF_FILTERS).some(v=>(v||'').trim()!=='');
+  foot.innerHTML = `${rows.length} cuenta${rows.length===1?'':'s'} de ${NOTIF_ROWS.length}`
+    + (hayFiltro?` · <a href="javascript:void(0)" onclick="notifQuitarFiltros()">Quitar filtros</a>`:'');
+  if(!rows.length){
+    b.innerHTML=`<tr><td colspan="${NOTIF_COLS.length+1}" style="text-align:center;color:var(--muted);padding:28px">No se encontraron cuentas con los filtros aplicados.</td></tr>`;
+    return;
+  }
+  rows.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${esc(r.correo)}</td>`
+      +`<td><div class="actions-cell" style="display:flex;gap:6px;justify-content:flex-end">`
+      +`<button class="icon-btn del-btn" title="Eliminar" onclick="notifEliminar(${r.id})">🗑️</button></div></td>`;
+    b.appendChild(tr);
+  });
+}
+function notifNuevo(){
+  document.getElementById('notifError').textContent='';
+  document.getElementById('notifAviso').classList.add('hidden');
+  const i=document.getElementById('notif_correo'); i.value='';
+  document.getElementById('notifModal').classList.remove('hidden');
+  setTimeout(()=>{ try{ i.focus(); }catch(e){} },60);
+}
+function notifClose(){ document.getElementById('notifModal').classList.add('hidden'); }
+async function notifGuardar(){
+  const el=document.getElementById('notifError'), av=document.getElementById('notifAviso');
+  const correo=String(document.getElementById('notif_correo').value||'').trim().toLowerCase();
+  el.textContent='';
+  if(!correo){ el.textContent='Indique la cuenta de correo.'; return; }
+  if(!NOTIF_RE.test(correo)){ el.textContent=`«${correo}» no tiene forma de cuenta de correo.`; return; }
+  if(NOTIF_ROWS.some(r=>String(r.correo||'').toLowerCase()===correo)){
+    el.textContent='Esa cuenta ya está en la lista.'; return;
+  }
+  // Dominio ajeno: se AVISA y se pide confirmar, no se bloquea. Bloquearlo
+  // dejaría sin salida el día que haya que avisarle a alguien de afuera; no
+  // decir nada deja pasar el dedazo que manda avisos internos fuera de la
+  // empresa. El aviso aparece una vez: al segundo Guardar, se manda.
+  const ajeno = !correo.endsWith('@'+NOTIF_DOMINIO);
+  if(ajeno && av.classList.contains('hidden')){
+    av.textContent=`⚠ «${correo}» no es del dominio ${NOTIF_DOMINIO}. Si es correcto, vuelva a presionar Guardar.`;
+    av.classList.remove('hidden');
+    return;
+  }
+  const btn=document.getElementById('notifSaveBtn'); btn.disabled=true;
+  try{
+    await api('POST','/notificaciones',{correo});
+    toast('Cuenta agregada'); notifClose(); await loadNotificaciones();
+  }catch(e){ el.textContent = e.message || 'No se pudo agregar'; }
+  finally{ btn.disabled=false; }
+}
+function notifEliminar(id){
+  const r=NOTIF_ROWS.find(x=>x.id===id); if(!r) return;
+  askConfirmCB('¿Está seguro que desea eliminar esta cuenta de la lista de notificaciones?', r.correo, async ()=>{
+    try{ await api('DELETE','/notificaciones/'+id); toast('Cuenta eliminada'); await loadNotificaciones(); }
+    catch(e){ toast('No se pudo eliminar: '+e.message); }
+  }, {titulo:'Eliminar cuenta', ok:'Sí, eliminar', icono:'✉️'});
+}
+
 function esc(s){ if(s===undefined||s===null||s==="")return "—"; return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function attr(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 let toastT;
 function toast(msg){ let t=document.querySelector('.toast'); if(t)t.remove(); t=document.createElement('div'); t.className="toast"; t.textContent=msg; document.body.appendChild(t); clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),2800); }
 document.getElementById('optEditInput').addEventListener('keydown',e=>{if(e.key==='Enter')saveOption();});
+document.getElementById('notif_correo').addEventListener('keydown',e=>{if(e.key==='Enter')notifGuardar();});
+// Si corrige el correo después de ver el aviso de dominio ajeno, el aviso se
+// retira: si no, el segundo Guardar mandaría un correo distinto del advertido.
+document.getElementById('notif_correo').addEventListener('input',()=>{
+  document.getElementById('notifAviso').classList.add('hidden');
+  document.getElementById('notifError').textContent='';
+});
 
 /* Arranque */
 init();

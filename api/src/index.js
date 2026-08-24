@@ -1240,6 +1240,86 @@ app.http('conversion-delete', {
 });
 
 /* ============================================================
+   MÓDULO: NOTIFICACIONES — cuentas de correo  (Compras / Administrador)
+   ------------------------------------------------------------
+   Mantenimiento de dbo.NotificacionCuenta (migración V10): la lista de correos
+   que reciben los avisos del portal. Solo listar / agregar / eliminar; no hay
+   edición, porque cambiar un correo es borrar uno y agregar otro.
+
+   El ENVÍO de los correos todavía no existe. Esto es solo dónde se guarda a
+   quién avisarle; cuando se defina el disparador, lee esta tabla.
+   ============================================================ */
+const puedeNotificaciones = (rol) => rol === 'Compras' || rol === 'Administrador';
+async function requireNotificaciones(request) { return puedeNotificaciones(await getRole(getUser(request))); }
+
+const NOTIF_MAX = 200;   // largo de la columna en la base
+
+/* Misma forma que el CHECK de V10 y que la del frontend: algo, arroba, algo,
+   punto, algo, sin espacios. Deliberadamente laxa — validar un correo "de
+   verdad" con una expresión regular no se puede, y la única prueba real es
+   mandarle un mensaje. Lo que sí atrapa es el dedazo: falta la arroba, quedó
+   un espacio, no tiene dominio. */
+const NOTIF_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function notifNormalizar(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
+function notifValidar(correo){
+  if (!correo) return 'Indique la cuenta de correo.';
+  if (correo.length > NOTIF_MAX) return `La cuenta no puede pasar de ${NOTIF_MAX} caracteres.`;
+  if (!NOTIF_RE.test(correo)) return `«${correo}» no tiene forma de cuenta de correo.`;
+  return null;
+}
+
+app.http('notificaciones-list', {
+  methods: ['GET'], authLevel: 'anonymous', route: 'notificaciones',
+  handler: async (request, context) => {
+    try {
+      if (!(await requireNotificaciones(request))) return json(403, { error: 'Solo Compras/Administrador' });
+      const r = await query(
+        `SELECT Id AS id, Correo AS correo, CreadoPor AS creado_por,
+                to_char(FechaCreacion,'YYYY-MM-DD HH24:MI') AS fecha_creacion
+           FROM dbo.NotificacionCuenta ORDER BY Correo`);
+      return json(200, r.rows);
+    } catch (e) { context.error(e); return json(500, { error: 'Error al listar las cuentas', detail: e.message }); }
+  }
+});
+
+app.http('notificacion-create', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'notificaciones',
+  handler: async (request, context) => {
+    try {
+      if (!(await requireNotificaciones(request))) return json(403, { error: 'No tiene permiso para agregar cuentas' });
+      const body = await request.json();
+      const correo = notifNormalizar(body && body.correo);
+      const err = notifValidar(correo);
+      if (err) return json(400, { error: err });
+      const user = getUser(request);
+      const r = await query(
+        `INSERT INTO dbo.NotificacionCuenta (Correo, CreadoPor) VALUES ($1,$2) RETURNING Id`,
+        [correo, (user && user.email) || null]);
+      return json(201, { ok: true, id: r.rows[0].id });
+    } catch (e) {
+      context.error(e);
+      // El UNIQUE es sobre el correo ya en minúsculas, así que esto también
+      // atrapa el mismo correo escrito con otras mayúsculas.
+      if (isUnique(e)) return json(409, { error: 'Esa cuenta ya está en la lista' });
+      return json(500, { error: 'No se pudo agregar la cuenta', detail: e.message });
+    }
+  }
+});
+
+app.http('notificacion-delete', {
+  methods: ['DELETE'], authLevel: 'anonymous', route: 'notificaciones/{id}',
+  handler: async (request, context) => {
+    try {
+      if (!(await requireNotificaciones(request))) return json(403, { error: 'No tiene permiso para eliminar cuentas' });
+      const r = await query(`DELETE FROM dbo.NotificacionCuenta WHERE Id=$1`, [parseInt(request.params.id, 10)]);
+      if (!r.rowCount) return json(404, { error: 'La cuenta ya no existe' });
+      return json(200, { ok: true });
+    } catch (e) { context.error(e); return json(500, { error: 'No se pudo eliminar la cuenta', detail: e.message }); }
+  }
+});
+
+/* ============================================================
    MÓDULO: BANDEJA DE CARGAS MASIVAS DE CÓDIGOS
    ------------------------------------------------------------
    El Excel ya no crea los registros de una: cae aquí como una CARGA con sus
