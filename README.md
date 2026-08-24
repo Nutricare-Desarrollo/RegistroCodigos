@@ -157,23 +157,92 @@ El archivo tiene dos hojas:
   ninguna marca: `importHeaderMap()` los busca por ese texto.
 - **Listas** — oculta (`veryHidden`), con los valores de los catálogos: **una columna por lista**.
   `Unidad de Inventario`, `Unidad de Compra` y `Unidad de Venta` comparten la columna de `unidades`.
+  En **Códigos** lleva además los bloques y las columnas resolutoras de la cascada (abajo).
 
-**Todas** las validaciones son una **referencia simple a un rango** (`Listas!$D$2:$D$40`). No hay
-fórmulas, y esto es a propósito.
+Las validaciones de lista simple son una **referencia a un rango** (`Listas!$D$2:$D$40`); las de los
+cuatro campos en cascada son un **`INDIRECT`**, que también resuelve a una referencia.
 
-### Por qué Línea/Familia/Grupo Artículo no van en cascada
+### Cascada en la plantilla de Códigos
 
-Se intentó: la lista del hijo se armaba con `IFERROR(OFFSET(…MATCH…COUNTA…))` sobre una matriz con
-una columna por cada valor del padre. **Excel de escritorio rechaza esa fórmula** — la lista de una
-validación tiene que resolver a una *referencia*, e `IFERROR` devuelve un valor, no una referencia.
-Y el daño no se queda ahí: al encontrar una validación inválida, Excel **descarta esa y todas las
-que vienen después en el archivo**. En la práctica se veía el desplegable solo en Departamento
-(la única validación anterior a la cascada) y lo perdían Línea, Familia, Grupo Artículo, Centro de
-Costo y todos los campos siguientes.
+Los campos dependientes muestran **solo los valores del padre que tenga esa fila**:
 
-Por eso los campos dependientes traen la **lista completa** de sus valores: todas las líneas, todas
-las familias, todos los grupos. La coherencia padre/hijo la valida la **API al procesar la carga**,
-que además es la única defensa real (ver el punto de pegar filas, abajo).
+| Campo | Se acota por | Fuente del mapa |
+|---|---|---|
+| Línea | Departamento | `dept_lines` |
+| Familia | Línea | `familias` |
+| Grupo Artículo | Departamento | `grupo_by_dept` |
+| Centro de Costo | Grupo Artículo | `grupo_centros` (relación `V9`) |
+
+**Órdenes de Pedido no tiene cascada** porque no tiene campos jerárquicos (`m.hier` va vacío):
+el mismo código corre en los dos módulos y ahí simplemente no encuentra relaciones.
+
+Un desplegable **vacío** significa que falta el padre en esa fila, que el valor del padre no está en
+el catálogo, o que ese padre no tiene hijos registrados. Es a propósito: obliga a llenar la fila de
+**izquierda a derecha** y no deja armar una combinación que la API va a rechazar después.
+
+La única excepción es **Centro de Costo**: un Grupo Artículo **sin centros ligados** apunta al
+catálogo **completo**, no a una lista vacía — la misma regla del formulario (ver *Centro de Costo*).
+Si no, `Cuidado Crónico`, que hoy no tiene ninguno, dejaría la columna imposible de llenar.
+
+#### Cómo está armado
+
+La fuente de una validación de lista tiene que resolver a una **referencia**. Eso es lo que hizo
+fracasar el intento anterior, que armaba la lista del hijo con `IFERROR(OFFSET(…MATCH…COUNTA…))`:
+`IFERROR` devuelve un *valor*, no una referencia, y **Excel de escritorio rechaza esa fórmula**. El
+daño no se quedaba ahí — al encontrar una validación inválida Excel **descarta esa y todas las que
+vienen después en el archivo**, así que se perdía el desplegable en Línea, Familia, Grupo Artículo,
+Centro de Costo y todos los campos siguientes.
+
+La solución es sacar el trabajo sucio **fuera** de la validación, a celdas normales de la hoja
+`Listas`, donde cualquier fórmula es legal. En `Listas`, por cada relación se escribe un **bloque**
+con una columna por valor del padre:
+
+```
+fila 1   el valor del padre                  CO.EQ._ESPECIALIDADES_QUIRÚRGICAS
+fila 2   el rango de sus hijos, como TEXTO   Listas!$O$3:$O$4
+fila 3+  los valores hijos                   Ortopedia / Terapias Quirúrgicas
+```
+
+Los padres **sin hijos no entran** en el bloque, así que el `MATCH` les falla igual que a una celda
+vacía. Y por cada campo dependiente va una columna **resolutora**, alineada fila a fila con la
+Plantilla (resolutora fila *N* ↔ Plantilla fila *N*):
+
+```excel
+=IFERROR(INDEX(Listas!$N$2:$O$2, MATCH(Plantilla!$C2, Listas!$N$1:$O$1, 0)), "")
+```
+
+Devuelve el texto del rango que le toca a esa fila, o `""`. La validación queda entonces en:
+
+```excel
+INDIRECT(Listas!$P2)
+```
+
+La fila va **relativa** (`$P2`, no `$P$2`), así Excel la corre junto con la fila de la plantilla a lo
+largo de todo el rango de la validación. Con `""`, `INDIRECT` da error y el desplegable sale vacío.
+
+- Es **`INDEX`/`MATCH`, no `OFFSET`**: nada volátil. Son `TPL_ROWS` fórmulas por campo dependiente,
+  y el rango de la fila 2 lo calcula el código al generar el archivo, no una fórmula.
+- El libro se guarda con **`fullCalcOnLoad`** (ahora en los dos módulos, antes solo en Órdenes): sin
+  eso Excel arma las listas antes de calcular las resolutoras y el primer despliegue sale vacío.
+- Las relaciones jerárquicas se leen de **`m.hier`** (padre + mapa padre→hijos), así que agregar un
+  nivel en `MODULES`/`loadCatalogsFor` no obliga a tocar el generador. `Grupo Artículo → Centro de
+  Costo` va aparte porque no es jerarquía de catálogo, es la tabla de relación de `V9`.
+- Verificado con el archivo generado: los cuatro `INDIRECT` sobreviven un round-trip completo y las
+  resolutoras devuelven el rango correcto en los cinco casos (padre válido, padre sin hijos, padre
+  fuera del catálogo, fila vacía y grupo sin centros ligados).
+
+#### Lo que la cascada NO resuelve
+
+- **Cambiar el padre no borra el hijo.** Si alguien llena Departamento, Línea y Familia y después
+  cambia el Departamento, los valores viejos se quedan escritos: Excel no puede vaciar una celda
+  solo. Se corrige a mano, o lo agarra la validación de la carga con el motivo a la vista.
+- **Pegar filas copiadas se salta la validación.** Eso Excel no lo puede impedir.
+- **`familias` está indexado por nombre de Línea**, y el mismo nombre puede existir bajo dos
+  Departamentos: en ese caso la lista de Familia trae las de ambos. Es exactamente lo que ya hace el
+  formulario, que lee el mismo mapa.
+
+Por eso la **API sigue validando** la coherencia padre/hijo al procesar la carga: es la única defensa
+real, la cascada solo evita el error antes de que llegue.
 
 ### Órdenes: Unidades x Caja y Total de Unidades calculados
 
@@ -201,8 +270,9 @@ cientos de filas vacías.
 - Es **bloqueante** (`errorStyle: stop`): Excel no acepta un valor fuera de la lista. Aun así, **pegar
   filas copiadas salta la validación** — eso Excel no lo puede impedir, así que la API sigue validando
   los valores al procesar la carga.
-- Al ser referencias simples, los desplegables funcionan igual en **Excel de escritorio**, **Excel en
-  el navegador** y **WPS**.
+- Las listas simples son referencias directas y las de la cascada un `INDIRECT` a una celda, las dos
+  formas que Excel admite como fuente: los desplegables funcionan igual en **Excel de escritorio**,
+  **Excel en el navegador** y **WPS**.
 - La plantilla se genera con **ExcelJS** (`exceljs.min.js` por CDN) porque **SheetJS en su versión
   gratuita no puede escribir validaciones de datos**. SheetJS se sigue usando para **leer** el archivo
   subido y para **exportar** el grid; son dos librerías con dos trabajos distintos.
@@ -452,9 +522,11 @@ Function.
 
 La API sigue aceptando cualquier centro del catálogo al guardar un registro (`type:'cat'`), a
 propósito: endurecerlo rechazaría los registros históricos al editarlos y las filas de Excel que hoy
-sí entran. Por lo mismo, la **plantilla de Excel** sigue trayendo la lista completa en esa columna
-(Excel no admite listas en cascada, ver la sección de la plantilla): el filtro por grupo es del
-formulario, no del archivo.
+sí entran.
+
+En la **plantilla de Excel**, en cambio, la columna Centro de Costo **sí se acota** al Grupo Artículo
+de la fila (ver *Cascada en la plantilla de Códigos*), con la misma excepción del formulario: un grupo
+**sin centros ligados** ofrece el catálogo completo.
 
 
 

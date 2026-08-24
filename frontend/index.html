@@ -529,7 +529,8 @@ td.chk input,th.chk input{width:16px;height:16px;cursor:pointer}
       <div id="importIntro">
         <p style="margin-top:0">El archivo debe tener los <b>mismos encabezados de columna</b> que la descarga a Excel (primera fila). Las columnas que no coincidan se ignoran.</p>
         <p>Los valores de las listas (Departamento, Proveedor, etc.) <b>deben existir en los catálogos</b>; si no, esa fila se marcará con error y podrás corregirla. Descarga la plantilla para partir del formato correcto.</p>
-        <p>La plantilla trae esos campos como <b>listas desplegables</b> con todos los valores del catálogo. <b>Línea, Familia</b> y <b>Grupo Artículo</b> muestran la lista completa, no solo la del Departamento: revisa que la combinación sea la correcta, porque eso se valida al procesar la carga.</p>
+        <p>La plantilla trae esos campos como <b>listas desplegables</b> con los valores del catálogo.</p>
+        <p id="importCascadaNote" class="hidden"><b>Línea, Familia, Grupo Artículo</b> y <b>Centro de Costo</b> muestran <b>solo los valores que corresponden</b> a lo elegido en la misma fila, así que la fila se llena <b>de izquierda a derecha</b>: si un desplegable sale vacío es porque falta completar la columna de la que depende. Si cambiás el Departamento después, la Línea y la Familia que ya estaban escritas <b>no se borran solas</b> — revisá que sigan correspondiendo, porque eso se valida al procesar la carga.</p>
         <p id="importCalcNote" class="hidden"><b>Unidades x Caja</b> y <b>Total de Unidades</b> vienen calculados: la primera la trae Conversiones según el producto y el total es <b>Cajas × Unidades x Caja</b>. Esas dos columnas están bloqueadas — si el producto no tiene conversión quedan vacías y hay que registrarla en <b>Conversiones</b>. Para un ajuste manual, desprotegé la hoja en <b>Revisar → Desproteger hoja</b> (sin contraseña).</p>
         <p>En <b>Creación de Códigos</b> el archivo no crea los registros de inmediato: queda en <b>Cargas de Excel</b> como pendiente, donde se revisan los códigos y se registran los que se marquen.</p>
       </div>
@@ -2040,6 +2041,8 @@ function openImport(){
   document.getElementById('importTitle').textContent="Subir Excel · "+M().title;
   document.getElementById('importIntro').classList.remove('hidden');
   document.getElementById('importCalcNote').classList.toggle('hidden', ACT!=='ordenes');
+  // La cascada de la plantilla es de Códigos: Órdenes no tiene campos jerárquicos.
+  document.getElementById('importCascadaNote').classList.toggle('hidden', ACT!=='codigos');
   document.getElementById('importProgress').classList.add('hidden');
   document.getElementById('importResults').classList.add('hidden');
   document.getElementById('importResults').innerHTML="";
@@ -2061,22 +2064,52 @@ function closeImport(){ document.getElementById('importModal').classList.add('hi
      con el texto EXACTO de las etiquetas del formulario. No se les puede agregar
      un asterisco ni nada: importHeaderMap() los busca por ese texto.
    - Hoja "Listas" (oculta): una columna por lista, con sus valores.
-   - Las validaciones se aplican al rango de filas 2..TPL_ROWS de cada columna,
-     y TODAS son una referencia simple a un rango (`Listas!$D$2:$D$40`).
+   - Las validaciones se aplican al rango de filas 2..TPL_ROWS de cada columna.
+     Las de lista simple son una referencia directa (`Listas!$D$2:$D$40`); las
+     de los campos en cascada son `INDIRECT(...)`, ver abajo.
 
-   Por qué no hay cascada (Línea/Familia según Departamento):
-   se intentó con `IFERROR(OFFSET(...MATCH...COUNTA...))` y Excel de escritorio
-   rechaza esa fórmula — la lista de validación tiene que resolver a una
-   REFERENCIA, e IFERROR devuelve un valor, no una referencia. Peor todavía:
-   al encontrar una validación inválida Excel descarta esa y TODAS las que
-   siguen en el archivo, así que la cascada dejaba sin desplegable a Línea,
-   Familia, Grupo Artículo, Centro de Costo y todo lo que viniera después.
-   Por eso los campos dependientes traen la lista COMPLETA de sus valores
-   (todas las líneas, todas las familias) en vez de solo las del padre.
+   CASCADA (Códigos): Departamento → Línea → Familia, Departamento → Grupo
+   Artículo y Grupo Artículo → Centro de Costo. La lista del hijo muestra SOLO
+   los valores del padre que tenga esa fila.
 
-   La coherencia padre/hijo la valida la API al procesar la carga, que además
-   es la única defensa real: pegar filas copiadas se salta la validación de
-   Excel y eso no se puede impedir desde el archivo.
+   Cómo, y por qué así. La fuente de una validación de lista tiene que resolver
+   a una REFERENCIA. Eso descarta envolverla en IFERROR —devuelve un valor— y
+   descartarla sale caro: al encontrar una validación inválida Excel de
+   escritorio tira esa y TODAS las que siguen en el archivo, así que un intento
+   anterior con `IFERROR(OFFSET(...MATCH...COUNTA...))` dejaba sin desplegable a
+   Línea, Familia, Grupo Artículo, Centro de Costo y todo lo que viniera después.
+
+   Acá el trabajo sucio se hace FUERA de la validación, en celdas normales de la
+   hoja Listas, donde cualquier fórmula es legal. La validación queda en
+   `INDIRECT(Listas!$BA2)`, que sí es una referencia.
+
+   En Listas, por cada relación se escribe un BLOQUE con una columna por valor
+   del padre:
+       fila 1  el valor del padre                 (p. ej. "CO.EQ._ORTOPEDIA")
+       fila 2  el rango de sus hijos, como texto  (p. ej. "Listas!$AB$3:$AB$9")
+       fila 3+ los valores hijos
+   Los padres SIN hijos no entran en el bloque, así que el MATCH falla para
+   ellos igual que para una celda vacía.
+
+   Y por cada campo dependiente una columna RESOLUTORA, alineada fila a fila con
+   la Plantilla (resolutora fila N ↔ Plantilla fila N):
+       IFERROR(INDEX(<fila 2 del bloque>, MATCH(<padre>,<fila 1 del bloque>,0)),"")
+   Devuelve el texto del rango que le toca a esa fila, o "" si el padre está
+   vacío, no está en el catálogo o no tiene hijos. `INDIRECT("")` da error y el
+   desplegable sale vacío, que es lo que se busca: se llena de izquierda a
+   derecha.
+
+   Excepción: un Grupo Artículo sin centros ligados apunta al catálogo COMPLETO
+   de Centro de Costo, no a una lista vacía — la misma regla del formulario
+   (ver la sección de Centro de Costo en el README).
+
+   Nada de esto es volátil (INDEX/MATCH, no OFFSET) y el rango de la fila 2 lo
+   calcula este código, no una fórmula. El libro se guarda con `fullCalcOnLoad`
+   para que las resolutoras tengan valor antes de que Excel arme las listas.
+
+   Sigue siendo cierto que la única defensa real es la API: cambiar el padre
+   NO borra el hijo que ya estaba escrito, y pegar filas copiadas se salta la
+   validación. Los dos casos los agarra la validación de la carga.
    --------------------------------------------------------------------------- */
 const TPL_ROWS = 1000;                 // filas de la plantilla que llevan validación
 
@@ -2141,18 +2174,81 @@ async function downloadTemplate(){
     }
   });
 
+  // --- Cascada: bloques por padre + columna resolutora ---
+  // Ver la nota del encabezado. El bloque y la resolutora viven en la hoja
+  // Listas (oculta); la validación se queda en un INDIRECT, que es lo único
+  // que Excel acepta como fuente además de una referencia directa.
+  const colDeCampo={}; fields.forEach((f,i)=>{ colDeCampo[f.key]=colLetter(i+1); });
+
+  // Las relaciones jerárquicas salen de `hier` (padre + mapa padre→hijos), así
+  // que agregar un nivel en MODULES/loadCatalogsFor no obliga a tocar esto.
+  const cascadas=Object.keys(hier)
+    .filter(k=>hier[k] && hier[k].parent && hier[k].map)
+    .map(k=>({hijo:k, padre:hier[k].parent, map:hier[k].map}));
+  // Grupo Artículo → Centro de Costo no es jerarquía de catálogo (es la tabla
+  // de relación de V9), por eso va aparte. `fallback` es la regla del
+  // formulario: grupo sin centros ligados ⇒ catálogo completo.
+  if(ACT==='codigos' && m.grupoCentros && Object.keys(m.grupoCentros).length){
+    cascadas.push({hijo:'centro_costo', padre:'grupo_articulo', map:m.grupoCentros, fallback:'centro_costo'});
+  }
+
+  const resolutora={};                               // key del hijo -> letra de su columna en Listas
+  cascadas.forEach(cas=>{
+    if(!colDeCampo[cas.hijo] || !colDeCampo[cas.padre]) return;   // el campo no está en la plantilla
+    const padres=Object.keys(cas.map)
+      .filter(p=>p!==null && p!==undefined && String(p).trim()!=="")
+      .sort((a,b)=>String(a).localeCompare(String(b),'es'));
+
+    // Una columna por padre. Fila 1 el padre, fila 2 el rango de sus hijos
+    // como TEXTO, fila 3 en adelante los hijos. El padre sin hijos no entra:
+    // así el MATCH le falla igual que a una celda vacía y la lista sale vacía.
+    const cols=[];
+    padres.forEach(p=>{
+      const vals=tplUniq(cas.map[p]);
+      let ref=null;
+      if(vals.length){
+        const c=++col, L=colLetter(c);
+        vals.forEach((v,i)=>{ wl.getCell(i+3,c).value=v; });
+        ref=`Listas!$${L}$3:$${L}$${vals.length+2}`;
+        wl.getCell(1,c).value=p; wl.getCell(2,c).value=ref; cols.push(c);
+      } else if(cas.fallback && rangos[cas.fallback]){
+        const c=++col;
+        wl.getCell(1,c).value=p; wl.getCell(2,c).value=rangos[cas.fallback]; cols.push(c);
+      }
+    });
+    if(!cols.length) return;
+
+    const c1=colLetter(cols[0]), c2=colLetter(cols[cols.length-1]);
+    const R=++col, LR=colLetter(R), P=colDeCampo[cas.padre];
+    wl.getCell(1,R).value=`_rango_${cas.hijo}`;
+    // Resolutora fila N ↔ Plantilla fila N. INDEX/MATCH (no OFFSET) para que
+    // no sea volátil: son TPL_ROWS fórmulas por campo dependiente.
+    for(let r=2;r<=TPL_ROWS;r++){
+      wl.getCell(r,R).value={formula:
+        `IFERROR(INDEX(Listas!$${c1}$2:$${c2}$2,MATCH(Plantilla!$${P}${r},Listas!$${c1}$1:$${c2}$1,0)),"")`};
+    }
+    resolutora[cas.hijo]=LR;
+  });
+
   // --- Validaciones ---
-  // Solo referencias a rango: nada de fórmulas. Ver la nota de arriba.
+  // Lista simple: referencia directa al rango. Campo en cascada: INDIRECT
+  // sobre su resolutora — la fila va RELATIVA ($BA2), así Excel la corre junto
+  // con la fila de la plantilla a lo largo de todo el rango de la validación.
   fields.forEach((f,i)=>{
     const clave = (f.type==='list' && f.list) ? f.list : (f.type==='dependent' ? f.key : null);
-    const rango = clave ? rangos[clave] : null;
-    if(!rango) return;
+    const enCascada = resolutora[f.key];
+    const fuente = enCascada ? `INDIRECT(Listas!$${enCascada}2)` : (clave ? rangos[clave] : null);
+    if(!fuente) return;
+    const padre = enCascada ? (cascadas.find(c=>c.hijo===f.key)||{}).padre : null;
+    const etiquetaPadre = padre ? (fields.find(x=>x.key===padre)||{}).label : null;
     const letra=colLetter(i+1);
     ws.dataValidations.add(`${letra}2:${letra}${TPL_ROWS}`, {
-      type:'list', allowBlank:true, formulae:[rango],
+      type:'list', allowBlank:true, formulae:[fuente],
       showErrorMessage:true, errorStyle:'stop',
       errorTitle:'Valor no permitido',
-      error:`Elija un valor de la lista de ${f.label}. Si el que necesita no aparece, agréguelo primero en Catálogos.`
+      error: etiquetaPadre
+        ? `Elija un valor de la lista de ${f.label}. La lista muestra solo los valores de ${etiquetaPadre}: si sale vacía, complete primero esa columna en esta fila. Si el valor que necesita no aparece, agréguelo en Catálogos.`
+        : `Elija un valor de la lista de ${f.label}. Si el que necesita no aparece, agréguelo primero en Catálogos.`
     });
   });
 
@@ -2197,12 +2293,16 @@ async function downloadTemplate(){
   // Sin contraseña: se puede desproteger desde Revisar → Desproteger hoja si
   // hace falta un ajuste manual. Ojo: con la hoja protegida, pegar un bloque
   // que pise las columnas calculadas queda rechazado por Excel.
+  // Las resolutoras de la cascada y las columnas calculadas de Órdenes se
+  // guardan sin valor en caché: sin esto Excel arma las listas antes de
+  // calcularlas y el primer despliegue sale vacío.
+  wb.calcProperties.fullCalcOnLoad=true;
+
   if(bloqueadas.length){
     fields.forEach((f,i)=>{
       ws.getColumn(i+1).protection={locked: bloqueadas.includes(colLetter(i+1))};
     });
     ws.getRow(1).eachCell(c=>{ c.protection={locked:true}; });   // encabezados: los lee la importación
-    wb.calcProperties.fullCalcOnLoad=true;
     await ws.protect(undefined,{
       selectLockedCells:true, selectUnlockedCells:true,
       formatCells:false, formatColumns:false, formatRows:false,
