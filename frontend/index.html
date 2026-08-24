@@ -2360,17 +2360,27 @@ async function downloadTemplate(){
   toast("Plantilla descargada");
 }
 function setImportProgress(done,total){ document.getElementById('importProgTxt').textContent=`Procesando ${done} de ${total} registro(s)…`; }
-async function runImport(rows){
+async function runImport(rows, archivo){
   const m=M(); const headerMap=importHeaderMap();
   const results=[]; let ok=0, vacias=0;
   for(let i=0;i<rows.length;i++){
     const payload=buildImportPayload(rows[i], headerMap);
     if(Object.values(payload).every(v=>v==='')){ vacias++; setImportProgress(i+1,rows.length); continue; }
-    try{ await api('POST', m.api.rec, payload); ok++; }
+    // _origen:'excel' calla el aviso fila por fila. Un archivo de 50 líneas es
+    // UNA acción del usuario, no 50: al terminar se pide un solo aviso con el
+    // total. La API ignora las claves que no son campos del registro.
+    try{ await api('POST', m.api.rec, Object.assign({}, payload, {_origen:'excel'})); ok++; }
     catch(e){ results.push({fila:i+2, error:e.message}); }   // +2: encabezado + base 1
     setImportProgress(i+1,rows.length);
   }
+  if(ok) await avisarCargaExcel(ACT, ok, archivo);
   return {ok, errores:results, vacias, total:rows.length};
+}
+/* Aviso único de la carga. Si falla no se le dice nada al usuario: la carga ya
+   terminó bien y el aviso es un efecto secundario, no parte del resultado. */
+async function avisarCargaExcel(modulo, cantidad, archivo){
+  try{ await api('POST','/notificaciones/aviso-carga',{modulo, cantidad, archivo}); }
+  catch(e){ console.warn('No se pudo pedir el aviso de la carga:', e.message); }
 }
 async function onImportFile(input){
   const file=input.files&&input.files[0]; if(!file) return;
@@ -2402,7 +2412,7 @@ async function onImportFile(input){
   document.getElementById('importTemplBtn').classList.add('hidden');
   document.getElementById('importChooseBtn').classList.add('hidden');
   document.getElementById('importProgress').classList.remove('hidden');
-  const res=await runImport(rows);
+  const res=await runImport(rows, fileName);
   document.getElementById('importProgress').classList.add('hidden');
   showImportResults(res);
   try{ await loadRecords(); renderMain(); }catch(e){}

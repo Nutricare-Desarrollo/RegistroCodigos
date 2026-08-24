@@ -56,6 +56,7 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 | GET    | /api/notificaciones          | Cuentas de correo que reciben avisos |
 | POST   | /api/notificaciones          | Agregar una cuenta (`{correo}`)      |
 | DELETE | /api/notificaciones/{id}     | Quitar una cuenta                    |
+| POST   | /api/notificaciones/aviso-carga | Aviso único al terminar una carga de Excel (`{modulo,cantidad,archivo}`) |
 
 ## Puesta en marcha
 
@@ -96,6 +97,8 @@ Navegador  ─►  Static Web Apps (SSO Entra ID)  ─►  /api (Azure Functions
 2. En **Configuration** (App settings) de la Static Web App, agregar:
    - `AAD_CLIENT_ID`, `AAD_CLIENT_SECRET`
    - `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`, `PG_SSL`
+   - `NOTIF_FLOW_URL` (avisos por Teams y correo; **es una credencial**, ver esa sección.
+     Se puede dejar vacía y llenarla cuando el flujo exista)
 3. En `frontend/staticwebapp.config.json`, reemplazar `<TENANT_ID>` por tu tenant.
 
 ### 4. Desarrollo local (opcional)
@@ -550,9 +553,7 @@ porque no alimenta ninguna lista desplegable — es configuración del sistema, 
 validación. En `cat.` habría quedado colgando del mantenimiento genérico de Catálogos, donde
 cualquier texto es una opción válida.
 
-**El envío de los correos todavía no existe.** Esta pantalla define *a quién* avisarle, no
-*cuándo*: falta decidir qué evento lo dispara y por dónde se manda (Azure Communication Services,
-SMTP, Logic App…). Cuando se defina, la tabla que hay que leer es esta.
+Esta pantalla define **a quién** avisarle; el **cuándo** está en la sección siguiente.
 
 ### Validación del correo
 
@@ -571,6 +572,109 @@ expresión regular, la única prueba real es mandarle un mensaje. Lo que sí atr
   distinta de la advertida.
 - Si el listado falla al cargar, la pantalla muestra **"No se pudo cargar el listado"** con
   **Reintentar**, no el mensaje de "no hay cuentas" — mismo criterio que la bandeja de cargas.
+
+## Aviso de creación por Teams y correo
+
+Cuando un usuario con rol **General** crea un código o una orden de pedido, la API manda **un
+POST** a un flujo de **Power Automate**. El flujo arma el mensaje y lo reparte: publica en el canal
+de Teams y manda el correo a las cuentas de la pantalla anterior.
+
+**El diseño del mensaje es del flujo.** Desde la API solo va el dato crudo: qué pasó, quién lo
+pidió, cuántos registros y a quién avisarle.
+
+Solo avisa el rol **General**: es el caso en que alguien más tiene que enterarse. Lo que crean
+Compras o Administrador no notifica — ellos son los que reciben el aviso.
+
+### Por qué un flujo y no enviar desde la Function
+
+Los **webhooks entrantes de Office 365 en Teams se retiraron el 22 de mayo de 2026**; el reemplazo
+que recomienda Microsoft es un flujo de Power Automate. Y una vez que el flujo existe para Teams, el
+correo sale del mismo flujo con el conector de Outlook: no hace falta un recurso de Azure para correo
+(Communication Services), ni el permiso de aplicación `Mail.Send` con consentimiento del
+administrador, ni una dependencia npm nueva. **Un solo secreto: la URL.**
+
+### App Setting
+
+`NOTIF_FLOW_URL` — la URL del flujo.
+
+> ⚠️ **Es una credencial.** La firma viaja en el parámetro `sig` de la propia URL, así que cualquiera
+> que la tenga puede disparar el flujo. Va **solo** en App Settings de la Static Web App; **nunca en
+> el repositorio**, ni en `local.settings.json` commiteado, ni en un README.
+
+Si queda **vacía no se manda nada** y queda un `warn` en los logs: la app funciona igual, solo no
+avisa. Es lo que permite desplegar esto antes de que el flujo exista.
+
+### El cuerpo que recibe el flujo
+
+```json
+{
+  "Descripcion": "Solicitud de creacion de codigos",
+  "SolicitadoPor": "anquesada@nutricare.co.cr",
+  "Cantidad": 0,
+  "NombreArchivo": "",
+  "Cuentas": [ { "Email": "lgomez@nutricare.co.cr" } ]
+}
+```
+
+`Descripcion` es lo que el flujo usa para decidir qué mensaje arma. Son **cuatro textos exactos**,
+declarados en la constante `DESCRIPCION` de `api/src/notificar.js`. Si cambian en el flujo, hay que
+cambiarlos ahí:
+
+| | Desde el formulario | Desde una carga de Excel |
+|---|---|---|
+| **Códigos** | `Solicitud de creacion de codigos` | `Carga Masiva de codigos` |
+| **Órdenes** | `Solicitud de Orden de Pedido` | `Carga Masiva Solicitud de orden de pedido` |
+
+- `SolicitadoPor` — el correo del usuario que creó el registro.
+- `Cantidad` y `NombreArchivo` — **`0` y `""` desde el formulario**; en una carga masiva, el total de
+  registros creados y el nombre del `.xlsx`.
+- `Cuentas` — las cuentas de *Configuración → Notificaciones*, en el formato `[{ "Email": … }]`.
+
+`adaptive-cards/notificacion-cuerpos.json` tiene los **cuatro cuerpos exactos**, generados por el
+propio `notificar.js` y no escritos a mano. Pegue uno en *"Usar carga útil de ejemplo para generar el
+esquema"* del disparador HTTP. (`notificacion-tarjetas.json` y `notificacion-correo-ejemplo.html`
+quedan como **diseño de referencia** por si se quiere reproducir ese aspecto dentro del flujo; la API
+ya no manda el mensaje armado.)
+
+### La respuesta se lee del cuerpo, no del código HTTP
+
+El flujo contesta `{"Resultado":"Enviado"}` o `{"Resultado":"Error"}` — **con HTTP 200 en los dos
+casos**. Por eso `enviar()` revisa el **cuerpo**: un `Resultado: "Error"` es un fallo aunque el
+estado diga que todo bien, y queda registrado en los logs de la Function. Un cuerpo que no sea JSON
+tampoco revienta: se trata como fallo.
+
+### El aviso nunca puede tumbar el guardado
+
+`avisarCreacion()` se llama **después** del `INSERT`, y ni ella ni nada de `notificar.js` re-lanza un
+error. Si el flujo responde `Error`, si devuelve 500, si no hay cuentas cargadas, si falta
+`NOTIF_FLOW_URL` o si el flujo se queda colgado, el registro **ya está guardado** y el usuario no ve
+nada raro; el problema queda en los logs.
+
+- La llamada lleva **timeout de 6 s** (`AbortController`), para que un flujo colgado no deje
+  esperando al usuario que acaba de dar Guardar.
+- Hay que **esperar** la llamada (no se puede dejar corriendo suelta): el host de Functions congela
+  el proceso al devolver la respuesta y el POST se perdería a medias.
+
+### Cargas de Excel: un solo aviso, no uno por fila
+
+La carga masiva de **Órdenes** entra por el mismo `POST /api/ordenes` que el formulario, así que un
+archivo de 50 filas habría mandado 50 correos y 50 mensajes de Teams por **una sola acción**.
+
+- Cada fila de la importación viaja con **`_origen: 'excel'`** y se calla. (La API ignora las claves
+  que no son campos del registro: `resolveRecord`/`ordResolve` recorren una lista blanca.)
+- Al terminar, el frontend pide **un** aviso a `POST /api/notificaciones/aviso-carga` con el total y
+  el nombre del archivo.
+- Ese total **no se cree a ciegas**: la API cuenta cuántos registros creó *ese* usuario en los
+  últimos 15 minutos y usa el menor de los dos. Sin ese tope, cualquier usuario autenticado podría
+  pedir un aviso de "5000 órdenes" que nunca creó. Si no creó nada reciente, responde `204`.
+- El **Excel de Códigos no pasa por acá**: cae en la bandeja de *Cargas de Excel*, a la que solo
+  entran Compras y Administrador, y el registro final lo crea `POST /api/cargas/{id}/procesar` con el
+  rol de ellos. Por eso no avisa, que es lo correcto.
+
+Una salvedad honesta: `_origen:'excel'` viaja en el cuerpo, así que un usuario podría mandarlo a mano
+para silenciar el aviso de un registro suyo. No se le dio más vuelta porque lo único que lograría es
+esconder **su propio** registro, que igual queda visible en el grid; el candado que sí importaba
+—inventar un total para spamear— es el de los 15 minutos.
 
 ## Seguridad
 - Las credenciales de PostgreSQL y el secret de Entra ID viven **solo** en las App

@@ -1,0 +1,62 @@
+{
+  "_comentario": "Los cuatro cuerpos EXACTOS que la API le manda al flujo de Power Automate. Generados por api/src/notificar.js, no escritos a mano. Pegue uno en \"Usar carga util de ejemplo para generar el esquema\" del disparador HTTP.",
+  "_respuesta_esperada": {
+    "Resultado": "Enviado"
+  },
+  "codigos_formulario": {
+    "Descripcion": "Solicitud de creacion de codigos",
+    "SolicitadoPor": "anquesada@nutricare.co.cr",
+    "Cantidad": 0,
+    "NombreArchivo": "",
+    "Cuentas": [
+      {
+        "Email": "lgomez@nutricare.co.cr"
+      },
+      {
+        "Email": "compras@nutricare.co.cr"
+      }
+    ]
+  },
+  "ordenes_formulario": {
+    "Descripcion": "Solicitud de Orden de Pedido",
+    "SolicitadoPor": "anquesada@nutricare.co.cr",
+    "Cantidad": 0,
+    "NombreArchivo": "",
+    "Cuentas": [
+      {
+        "Email": "lgomez@nutricare.co.cr"
+      },
+      {
+        "Email": "compras@nutricare.co.cr"
+      }
+    ]
+  },
+  "codigos_carga_masiva": {
+    "Descripcion": "Carga Masiva de codigos",
+    "SolicitadoPor": "anquesada@nutricare.co.cr",
+    "Cantidad": 10,
+    "NombreArchivo": "cargaCodigos20260824.xlsx",
+    "Cuentas": [
+      {
+        "Email": "lgomez@nutricare.co.cr"
+      },
+      {
+        "Email": "compras@nutricare.co.cr"
+      }
+    ]
+  },
+  "ordenes_carga_masiva": {
+    "Descripcion": "Carga Masiva Solicitud de orden de pedido",
+    "SolicitadoPor": "anquesada@nutricare.co.cr",
+    "Cantidad": 10,
+    "NombreArchivo": "cargaOrdenes20260824.xlsx",
+    "Cuentas": [
+      {
+        "Email": "lgomez@nutricare.co.cr"
+      },
+      {
+        "Email": "compras@nutricare.co.cr"
+      }
+    ]
+  }
+}

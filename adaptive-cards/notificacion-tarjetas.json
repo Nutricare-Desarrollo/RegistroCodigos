@@ -1,0 +1,292 @@
+{
+  "_comentario": "Las tarjetas Adaptive (Teams) que genera la API, con datos de ejemplo. Pegue una en https://adaptivecards.io/designer (host: Microsoft Teams). En el flujo NO hace falta armarlas: vienen listas en teams.card.",
+  "solicitud_creada": {
+    "type": "AdaptiveCard",
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.4",
+    "msteams": {
+      "width": "Full"
+    },
+    "body": [
+      {
+        "type": "Container",
+        "style": "accent",
+        "bleed": true,
+        "spacing": "None",
+        "items": [
+          {
+            "type": "ColumnSet",
+            "columns": [
+              {
+                "type": "Column",
+                "width": "auto",
+                "verticalContentAlignment": "Center",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "🏷️",
+                    "size": "ExtraLarge",
+                    "spacing": "None"
+                  }
+                ]
+              },
+              {
+                "type": "Column",
+                "width": "stretch",
+                "verticalContentAlignment": "Center",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "Solicitud de Código",
+                    "weight": "Bolder",
+                    "size": "Large",
+                    "wrap": true,
+                    "spacing": "None"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "text": "Pendiente de revisión",
+                    "isSubtle": true,
+                    "wrap": true,
+                    "spacing": "None"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "FactSet",
+        "spacing": "Medium",
+        "facts": [
+          {
+            "title": "Módulo",
+            "value": "Creación de Códigos"
+          },
+          {
+            "title": "Solicitado por",
+            "value": "arojas@nutricare.co.cr"
+          }
+        ]
+      },
+      {
+        "type": "Container",
+        "style": "emphasis",
+        "bleed": true,
+        "spacing": "Medium",
+        "items": [
+          {
+            "type": "TextBlock",
+            "text": "2026-08-24 11:33 · registro #412",
+            "isSubtle": true,
+            "size": "Small",
+            "wrap": true,
+            "spacing": "None"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "type": "Action.OpenUrl",
+        "title": "Abrir el portal",
+        "url": "https://gentle-mushroom-036105510.azurestaticapps.net"
+      }
+    ]
+  },
+  "orden_creada": {
+    "type": "AdaptiveCard",
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.4",
+    "msteams": {
+      "width": "Full"
+    },
+    "body": [
+      {
+        "type": "Container",
+        "style": "accent",
+        "bleed": true,
+        "spacing": "None",
+        "items": [
+          {
+            "type": "ColumnSet",
+            "columns": [
+              {
+                "type": "Column",
+                "width": "auto",
+                "verticalContentAlignment": "Center",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "📦",
+                    "size": "ExtraLarge",
+                    "spacing": "None"
+                  }
+                ]
+              },
+              {
+                "type": "Column",
+                "width": "stretch",
+                "verticalContentAlignment": "Center",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "Solicitud de Orden de Pedido",
+                    "weight": "Bolder",
+                    "size": "Large",
+                    "wrap": true,
+                    "spacing": "None"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "text": "Pendiente de revisión",
+                    "isSubtle": true,
+                    "wrap": true,
+                    "spacing": "None"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "FactSet",
+        "spacing": "Medium",
+        "facts": [
+          {
+            "title": "Módulo",
+            "value": "Órdenes de Pedido"
+          },
+          {
+            "title": "Solicitado por",
+            "value": "arojas@nutricare.co.cr"
+          }
+        ]
+      },
+      {
+        "type": "Container",
+        "style": "emphasis",
+        "bleed": true,
+        "spacing": "Medium",
+        "items": [
+          {
+            "type": "TextBlock",
+            "text": "2026-08-24 11:33 · registro #98",
+            "isSubtle": true,
+            "size": "Small",
+            "wrap": true,
+            "spacing": "None"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "type": "Action.OpenUrl",
+        "title": "Abrir el portal",
+        "url": "https://gentle-mushroom-036105510.azurestaticapps.net"
+      }
+    ]
+  },
+  "ordenes_cargadas": {
+    "type": "AdaptiveCard",
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.4",
+    "msteams": {
+      "width": "Full"
+    },
+    "body": [
+      {
+        "type": "Container",
+        "style": "accent",
+        "bleed": true,
+        "spacing": "None",
+        "items": [
+          {
+            "type": "ColumnSet",
+            "columns": [
+              {
+                "type": "Column",
+                "width": "auto",
+                "verticalContentAlignment": "Center",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "📦",
+                    "size": "ExtraLarge",
+                    "spacing": "None"
+                  }
+                ]
+              },
+              {
+                "type": "Column",
+                "width": "stretch",
+                "verticalContentAlignment": "Center",
+                "items": [
+                  {
+                    "type": "TextBlock",
+                    "text": "Carga masiva de Órdenes de Pedido",
+                    "weight": "Bolder",
+                    "size": "Large",
+                    "wrap": true,
+                    "spacing": "None"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "text": "Pendientes de revisión",
+                    "isSubtle": true,
+                    "wrap": true,
+                    "spacing": "None"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "FactSet",
+        "spacing": "Medium",
+        "facts": [
+          {
+            "title": "Módulo",
+            "value": "Órdenes de Pedido"
+          },
+          {
+            "title": "Solicitado por",
+            "value": "arojas@nutricare.co.cr"
+          },
+          {
+            "title": "Registros creados",
+            "value": "37"
+          }
+        ]
+      },
+      {
+        "type": "Container",
+        "style": "emphasis",
+        "bleed": true,
+        "spacing": "Medium",
+        "items": [
+          {
+            "type": "TextBlock",
+            "text": "2026-08-24 11:33 · archivo Ordenes_setiembre.xlsx",
+            "isSubtle": true,
+            "size": "Small",
+            "wrap": true,
+            "spacing": "None"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "type": "Action.OpenUrl",
+        "title": "Abrir el portal",
+        "url": "https://gentle-mushroom-036105510.azurestaticapps.net"
+      }
+    ]
+  }
+}

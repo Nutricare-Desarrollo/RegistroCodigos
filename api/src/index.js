@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { query } = require('./db');
+const { avisarCreacion, avisarCarga } = require('./notificar');
 
 /* ============================================================
    Utilidades
@@ -585,7 +586,15 @@ app.http('solicitud-create', {
       const placeholders = params.map((_, i) => '$' + (i + 1)).join(', ');
       const r = await query(
         `INSERT INTO dbo.Solicitud (${colList}) VALUES (${placeholders}) RETURNING Id`, params);
-      return json(201, { ok: true, id: r.rows[0].id });
+      const id = r.rows[0].id;
+      // Aviso por Teams y correo, solo si lo creó un usuario General. Va DESPUÉS
+      // del INSERT y no puede fallar hacia afuera: si el aviso no sale, el
+      // registro ya está guardado igual. `_origen:'excel'` lo manda la carga
+      // masiva, que avisa una sola vez al final en vez de fila por fila.
+      if (body._origen !== 'excel') {
+        await avisarCreacion(context, { modulo: 'codigos', rol: await getRole(user), usuario: user });
+      }
+      return json(201, { ok: true, id });
     } catch (e) {
       context.error(e);
       return json(500, { error: 'No se pudo crear el registro', detail: e.message });
@@ -875,7 +884,12 @@ app.http('orden-create', {
       const placeholders = params.map((_, i) => '$' + (i + 1)).join(', ');
       const r = await query(
         `INSERT INTO dbo.OrdenPedido (${colList}) VALUES (${placeholders}) RETURNING Id`, params);
-      return json(201, { ok: true, id: r.rows[0].id });
+      const id = r.rows[0].id;
+      // Ver la nota en solicitud-create: mismo criterio, mismo `_origen`.
+      if (body._origen !== 'excel') {
+        await avisarCreacion(context, { modulo: 'ordenes', rol: await getRole(user), usuario: user });
+      }
+      return json(201, { ok: true, id });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo crear', detail: e.message }); }
   }
 });
@@ -1303,6 +1317,54 @@ app.http('notificacion-create', {
       // atrapa el mismo correo escrito con otras mayúsculas.
       if (isUnique(e)) return json(409, { error: 'Esa cuenta ya está en la lista' });
       return json(500, { error: 'No se pudo agregar la cuenta', detail: e.message });
+    }
+  }
+});
+
+/* Aviso ÚNICO al terminar una carga masiva por Excel.
+   Lo pide el frontend cuando la importación terminó, con el total de registros
+   creados. Las filas en sí no avisan: cada POST viaja con `_origen:'excel'`.
+
+   El total NO se cree a ciegas: se cuenta cuántos registros creó ESE usuario en
+   los últimos 15 minutos y se usa el menor de los dos. Sin ese tope, cualquier
+   usuario autenticado podría pedir un aviso de "5000 órdenes" que nunca creó.
+   Si no creó nada reciente, no se manda nada (204). */
+const NOTIF_CARGA_TABLAS = { codigos: 'dbo.Solicitud', ordenes: 'dbo.OrdenPedido' };
+
+app.http('notificacion-aviso-carga', {
+  methods: ['POST'], authLevel: 'anonymous', route: 'notificaciones/aviso-carga',
+  handler: async (request, context) => {
+    try {
+      const user = getUser(request);
+      if (!user) return json(401, { error: 'No autenticado' });
+      const body = await request.json();
+      const modulo = String((body && body.modulo) || '').trim();
+      const tabla = NOTIF_CARGA_TABLAS[modulo];
+      if (!tabla) return json(400, { error: 'Módulo inválido' });
+      const pedida = parseInt(body && body.cantidad, 10);
+      if (!Number.isFinite(pedida) || pedida < 1) return json(400, { error: 'Cantidad inválida' });
+
+      // El aviso es para lo que crea el rol General; los demás no avisan.
+      const rol = await getRole(user);
+      if (rol !== 'General') return { status: 204 };
+
+      const r = await query(
+        `SELECT COUNT(*)::int AS n FROM ${tabla}
+          WHERE CreadoPor = $1 AND FechaCreacion >= (now() at time zone 'utc') - interval '15 minutes'`,
+        [user.name || user.email]);
+      const recientes = (r.rows[0] && r.rows[0].n) || 0;
+      if (!recientes) return { status: 204 };
+
+      const cantidad = Math.min(pedida, recientes);
+      // El nombre del archivo es texto que escribió el usuario al nombrarlo: se
+      // recorta y se limpia de saltos de línea antes de que viaje a la tarjeta.
+      const archivo = String((body && body.archivo) || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 260) || null;
+      await avisarCarga(context, { modulo, rol, usuario: user, cantidad, archivo });
+      return json(200, { ok: true, cantidad });
+    } catch (e) {
+      // Que falle un aviso no es un error del usuario: la carga ya terminó bien.
+      context.error(e);
+      return json(200, { ok: false, detail: e.message });
     }
   }
 });

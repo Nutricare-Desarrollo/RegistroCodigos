@@ -1,0 +1,140 @@
+{
+  "type": "AdaptiveCard",
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "version": "1.4",
+  "msteams": {
+    "width": "Full"
+  },
+  "body": [
+    {
+      "type": "Container",
+      "style": "emphasis",
+      "bleed": true,
+      "items": [
+        {
+          "type": "ColumnSet",
+          "columns": [
+            {
+              "type": "Column",
+              "width": "auto",
+              "verticalContentAlignment": "Center",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "🧾",
+                  "size": "ExtraLarge",
+                  "spacing": "None"
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "width": "stretch",
+              "verticalContentAlignment": "Center",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Carga de diario de renta",
+                  "weight": "Bolder",
+                  "size": "Large",
+                  "wrap": true,
+                  "spacing": "None"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "Detalle de la carga",
+                  "isSubtle": true,
+                  "wrap": true,
+                  "spacing": "None"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "ColumnSet",
+      "spacing": "Medium",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "auto",
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "📘 Número de diario",
+              "spacing": "None",
+              "wrap": false,
+              "weight": "Bolder"
+            },
+            {
+              "type": "TextBlock",
+              "text": "📄 Facturas",
+              "spacing": "Small",
+              "wrap": false,
+              "weight": "Bolder"
+            },
+            {
+              "type": "TextBlock",
+              "text": "🆔 Id en la aplicación",
+              "spacing": "Small",
+              "wrap": false,
+              "weight": "Bolder"
+            },
+            {
+              "type": "TextBlock",
+              "text": "📅 Fecha",
+              "spacing": "Small",
+              "wrap": false,
+              "weight": "Bolder"
+            },
+            {
+              "type": "TextBlock",
+              "text": "🕐 Hora",
+              "spacing": "Small",
+              "wrap": false,
+              "weight": "Bolder"
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "TextBlock",
+              "text": "DIR-000022466",
+              "spacing": "None",
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "10",
+              "spacing": "Small",
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "77",
+              "spacing": "Small",
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "14/08/2026",
+              "spacing": "Small",
+              "wrap": true
+            },
+            {
+              "type": "TextBlock",
+              "text": "12:22",
+              "spacing": "Small",
+              "wrap": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,9 @@
     "PG_DATABASE": "RegistroCodigos",
     "PG_USER": "tuusuario",
     "PG_PASSWORD": "tucontraseña",
-    "PG_SSL": "true"
+    "PG_SSL": "true",
+
+    "//": "URL del flujo de Power Automate que reparte el aviso por Teams y correo. ES UNA CREDENCIAL: la firma va en el parámetro sig de la propia URL. No la suba al repositorio. Si queda vacía no se manda nada y se deja un warn en los logs; la app funciona igual.",
+    "NOTIF_FLOW_URL": ""
   }
 }
