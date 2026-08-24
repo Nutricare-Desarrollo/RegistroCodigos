@@ -1,10 +1,11 @@
 /* ============================================================================
    NOTIFICACIONES — aviso de creación por Teams y correo
    ----------------------------------------------------------------------------
-   Cuando un usuario con rol GENERAL crea un código o una orden de pedido, se
-   manda UN POST a un flujo de Power Automate. El flujo arma el mensaje y lo
-   reparte: publica en el canal de Teams y manda el correo a las cuentas de
-   dbo.NotificacionCuenta (Configuración → Notificaciones, migración V10).
+   Cuando se crea un código o una orden de pedido —desde el formulario o por
+   carga de Excel, y con CUALQUIER rol— se manda UN POST a un flujo de Power
+   Automate. El flujo arma el mensaje y lo reparte: publica en el canal de Teams
+   y manda el correo a las cuentas de dbo.NotificacionCuenta (Configuración →
+   Notificaciones, migración V10).
 
    El reparto y el DISEÑO del mensaje son del flujo. Desde acá solo va el dato
    crudo: qué pasó, quién lo pidió, cuántos registros y a quién avisarle.
@@ -104,8 +105,11 @@ async function enviar(context, payload) {
 
 /* Arma el payload y lo manda. Las dos variantes —formulario y carga— cambian
    solo la descripción, la cantidad y el nombre del archivo. */
-async function avisar(context, { modulo, rol, usuario, origen, cantidad, archivo }) {
-  if (rol !== 'General') return false;              // solo avisa lo que crea el rol General
+async function avisar(context, { modulo, usuario, origen, cantidad, archivo }) {
+  // Avisa CUALQUIER rol. Antes se limitaba al rol General, pero en la práctica
+  // todos los usuarios del portal son Administrador, así que ese filtro dejaba
+  // el aviso sin dispararse nunca. Como ya no hace falta saber el rol, tampoco
+  // se consulta: se ahorra una consulta a la base en cada registro creado.
   const desc = (DESCRIPCION[modulo] || {})[origen];
   if (!desc) { context.error(`[notificar] módulo/origen desconocido: ${modulo}/${origen}`); return false; }
   if (!flowUrl()) { context.warn('[notificar] NOTIF_FLOW_URL no configurada: no se manda el aviso'); return false; }
@@ -123,9 +127,9 @@ async function avisar(context, { modulo, rol, usuario, origen, cantidad, archivo
 
 /* Un registro creado desde el FORMULARIO. Cantidad 0 y sin archivo, que es como
    el flujo distingue este caso del de la carga. */
-async function avisarCreacion(context, { modulo, rol, usuario }) {
+async function avisarCreacion(context, { modulo, usuario }) {
   try {
-    return await avisar(context, { modulo, rol, usuario, origen: 'formulario', cantidad: 0, archivo: '' });
+    return await avisar(context, { modulo, usuario, origen: 'formulario', cantidad: 0, archivo: '' });
   } catch (e) {
     context.error(`[notificar] error armando el aviso de creación: ${e.message}`);
     return false;
@@ -133,9 +137,9 @@ async function avisarCreacion(context, { modulo, rol, usuario }) {
 }
 
 /* Una CARGA DE EXCEL, entera: un solo aviso con el total, no uno por fila. */
-async function avisarCarga(context, { modulo, rol, usuario, cantidad, archivo }) {
+async function avisarCarga(context, { modulo, usuario, cantidad, archivo }) {
   try {
-    return await avisar(context, { modulo, rol, usuario, origen: 'carga', cantidad, archivo });
+    return await avisar(context, { modulo, usuario, origen: 'carga', cantidad, archivo });
   } catch (e) {
     context.error(`[notificar] error armando el aviso de carga: ${e.message}`);
     return false;

@@ -575,15 +575,17 @@ expresión regular, la única prueba real es mandarle un mensaje. Lo que sí atr
 
 ## Aviso de creación por Teams y correo
 
-Cuando un usuario con rol **General** crea un código o una orden de pedido, la API manda **un
-POST** a un flujo de **Power Automate**. El flujo arma el mensaje y lo reparte: publica en el canal
-de Teams y manda el correo a las cuentas de la pantalla anterior.
+Cuando se crea un código o una orden de pedido, la API manda **un POST** a un flujo de **Power
+Automate**. El flujo arma el mensaje y lo reparte: publica en el canal de Teams y manda el correo a
+las cuentas de la pantalla anterior.
 
 **El diseño del mensaje es del flujo.** Desde la API solo va el dato crudo: qué pasó, quién lo
 pidió, cuántos registros y a quién avisarle.
 
-Solo avisa el rol **General**: es el caso en que alguien más tiene que enterarse. Lo que crean
-Compras o Administrador no notifica — ellos son los que reciben el aviso.
+Avisa **cualquier rol**. Al principio se limitó al rol **General** —la idea era avisar solo de lo
+que alguien más tiene que atender—, pero en la práctica **todos los usuarios del portal son
+Administrador**, así que ese filtro dejaba el aviso sin dispararse nunca. Como ya no hace falta
+saber el rol, tampoco se consulta: se ahorra una consulta a la base en cada registro creado.
 
 ### Por qué un flujo y no enviar desde la Function
 
@@ -666,10 +668,13 @@ archivo de 50 filas habría mandado 50 correos y 50 mensajes de Teams por **una 
   el nombre del archivo.
 - Ese total **no se cree a ciegas**: la API cuenta cuántos registros creó *ese* usuario en los
   últimos 15 minutos y usa el menor de los dos. Sin ese tope, cualquier usuario autenticado podría
-  pedir un aviso de "5000 órdenes" que nunca creó. Si no creó nada reciente, responde `204`.
-- El **Excel de Códigos no pasa por acá**: cae en la bandeja de *Cargas de Excel*, a la que solo
-  entran Compras y Administrador, y el registro final lo crea `POST /api/cargas/{id}/procesar` con el
-  rol de ellos. Por eso no avisa, que es lo correcto.
+  pedir un aviso de "5000 órdenes" que nunca creó. Si no creó nada reciente, responde `204`. Este
+  candado es el único control que le queda al endpoint desde que el aviso dejó de mirar el rol.
+- El **Excel de Códigos no pasa por acá**: cae en la bandeja de *Cargas de Excel* y el registro
+  final lo crea `POST /api/cargas/{id}/procesar`, que **no avisa**. Es a propósito: quien procesa la
+  bandeja es la misma persona que tendría que atender el aviso, así que notificarlo sería avisarle
+  de su propia acción. Si algún día hace falta avisar de esa carga, el punto natural es cuando el
+  Excel **entra** a la bandeja (`POST /api/cargas`), no cuando se procesa.
 
 Una salvedad honesta: `_origen:'excel'` viaja en el cuerpo, así que un usuario podría mandarlo a mano
 para silenciar el aviso de un registro suyo. No se le dio más vuelta porque lo único que lograría es

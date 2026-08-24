@@ -592,7 +592,7 @@ app.http('solicitud-create', {
       // registro ya está guardado igual. `_origen:'excel'` lo manda la carga
       // masiva, que avisa una sola vez al final en vez de fila por fila.
       if (body._origen !== 'excel') {
-        await avisarCreacion(context, { modulo: 'codigos', rol: await getRole(user), usuario: user });
+        await avisarCreacion(context, { modulo: 'codigos', usuario: user });
       }
       return json(201, { ok: true, id });
     } catch (e) {
@@ -887,7 +887,7 @@ app.http('orden-create', {
       const id = r.rows[0].id;
       // Ver la nota en solicitud-create: mismo criterio, mismo `_origen`.
       if (body._origen !== 'excel') {
-        await avisarCreacion(context, { modulo: 'ordenes', rol: await getRole(user), usuario: user });
+        await avisarCreacion(context, { modulo: 'ordenes', usuario: user });
       }
       return json(201, { ok: true, id });
     } catch (e) { context.error(e); return json(500, { error: 'No se pudo crear', detail: e.message }); }
@@ -1344,10 +1344,6 @@ app.http('notificacion-aviso-carga', {
       const pedida = parseInt(body && body.cantidad, 10);
       if (!Number.isFinite(pedida) || pedida < 1) return json(400, { error: 'Cantidad inválida' });
 
-      // El aviso es para lo que crea el rol General; los demás no avisan.
-      const rol = await getRole(user);
-      if (rol !== 'General') return { status: 204 };
-
       const r = await query(
         `SELECT COUNT(*)::int AS n FROM ${tabla}
           WHERE CreadoPor = $1 AND FechaCreacion >= (now() at time zone 'utc') - interval '15 minutes'`,
@@ -1359,7 +1355,7 @@ app.http('notificacion-aviso-carga', {
       // El nombre del archivo es texto que escribió el usuario al nombrarlo: se
       // recorta y se limpia de saltos de línea antes de que viaje a la tarjeta.
       const archivo = String((body && body.archivo) || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 260) || null;
-      await avisarCarga(context, { modulo, rol, usuario: user, cantidad, archivo });
+      await avisarCarga(context, { modulo, usuario: user, cantidad, archivo });
       return json(200, { ok: true, cantidad });
     } catch (e) {
       // Que falle un aviso no es un error del usuario: la carga ya terminó bien.
