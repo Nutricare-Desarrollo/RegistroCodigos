@@ -670,11 +670,19 @@ archivo de 50 filas habría mandado 50 correos y 50 mensajes de Teams por **una 
   últimos 15 minutos y usa el menor de los dos. Sin ese tope, cualquier usuario autenticado podría
   pedir un aviso de "5000 órdenes" que nunca creó. Si no creó nada reciente, responde `204`. Este
   candado es el único control que le queda al endpoint desde que el aviso dejó de mirar el rol.
-- El **Excel de Códigos no pasa por acá**: cae en la bandeja de *Cargas de Excel* y el registro
-  final lo crea `POST /api/cargas/{id}/procesar`, que **no avisa**. Es a propósito: quien procesa la
-  bandeja es la misma persona que tendría que atender el aviso, así que notificarlo sería avisarle
-  de su propia acción. Si algún día hace falta avisar de esa carga, el punto natural es cuando el
-  Excel **entra** a la bandeja (`POST /api/cargas`), no cuando se procesa.
+- El **Excel de Códigos no pasa por acá**: cae en la bandeja de *Cargas de Excel*. Ahí el aviso sale
+  **cuando el Excel entra a la bandeja** (`POST /api/cargas`), no cuando se procesa, porque lo que
+  vale la pena anunciar es que *hay una carga esperando revisión*. El registro final lo crea
+  `POST /api/cargas/{id}/procesar`, que **sigue sin avisar**: quien procesa la bandeja es la misma
+  persona que atendería el aviso, así que notificarlo sería avisarle de su propia acción.
+- Ese aviso de Códigos se dispara **del lado del servidor**, dentro de `POST /api/cargas`, y no
+  desde el frontend como el de Órdenes. La razón es que acá sí hay un único punto que sabe todo de
+  una vez —quién subió, cuántas filas y con qué nombre—, así que no hace falta que el cliente lo
+  pida ni puede saltárselo. Tampoco se reutiliza `POST /api/notificaciones/aviso-carga`: ese
+  endpoint exige que existan registros recién creados en `dbo.Solicitud`, y en Códigos el Excel
+  todavía no crea ninguno (quedan en `dbo.CargaDetalle`), así que su candado de los 15 minutos
+  nunca se cumpliría. El candado no hace falta acá: la cantidad la cuenta el servidor
+  (`payload.length`), no la manda el cliente.
 
 Una salvedad honesta: `_origen:'excel'` viaja en el cuerpo, así que un usuario podría mandarlo a mano
 para silenciar el aviso de un registro suyo. No se le dio más vuelta porque lo único que lograría es

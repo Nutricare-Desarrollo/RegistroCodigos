@@ -1496,6 +1496,31 @@ app.http('carga-create', {
            FROM jsonb_array_elements($2::jsonb) e`,
         [cargaId, JSON.stringify(payload)]);
 
+      /* Aviso por Teams y correo AL SUBIR el archivo, no al procesarlo: lo que
+         interesa avisar es que hay una carga esperando revision en la bandeja.
+         Va del lado del servidor y no del cliente (como en Ordenes) porque acá
+         SI hay un unico punto que sabe todo de una: quien subio, cuantas filas
+         y con que nombre. Ademas asi no se puede saltar.
+
+         No se reutiliza POST /notificaciones/aviso-carga: ese endpoint valida
+         que existan registros recien creados en dbo.Solicitud, y en Codigos el
+         Excel no crea nada todavia — los codigos quedan pendientes en
+         dbo.CargaDetalle, asi que esa validacion nunca pasaria.
+
+         avisarCarga() ya se traga sus propios errores, pero igual va envuelto:
+         la carga esta guardada y ningun fallo del aviso puede tumbar la
+         respuesta al usuario. */
+      try {
+        await avisarCarga(context, {
+          modulo: 'codigos',
+          usuario: user,
+          cantidad: payload.length,
+          archivo: archivo.replace(/[\r\n\t]+/g, ' ').trim()
+        });
+      } catch (e) {
+        context.error(`[cargas] la carga ${cargaId} se guardó pero el aviso falló: ${e.message}`);
+      }
+
       return json(201, { ok: true, id: cargaId, codigos: payload.length });
     } catch (e) {
       context.error(e);
